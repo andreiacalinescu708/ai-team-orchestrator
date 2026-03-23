@@ -7,7 +7,7 @@ const kimi = new OpenAI({
 });
 
 // Wrapper cu tracking cost
-async function callKimi(messages, model = 'kimi-k2-1', temperature = 0.3) {
+async function callKimi(messages, model = 'kimi-k2-thinking', temperature = 0.3) {
     try {
         const response = await kimi.chat.completions.create({
             model: model,
