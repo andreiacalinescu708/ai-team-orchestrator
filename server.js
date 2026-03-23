@@ -85,6 +85,51 @@ bot.command('skills', async (ctx) => {
     await skillManager.listSkills(ctx.chat.id);
 });
 
+// Comanda /projects - Listează proiectele userului
+bot.command('projects', async (ctx) => {
+    const userId = ctx.from.id;
+    
+    try {
+        const result = await query(
+            'SELECT id, name, status, created_at FROM projects WHERE user_id = $1 ORDER BY created_at DESC',
+            [userId]
+        );
+        
+        if (result.rows.length === 0) {
+            return ctx.reply('📭 Nu ai proiecte încă. Folosește /start pentru a începe un proiect nou.');
+        }
+        
+        let message = `📁 <b>Proiectele tale (${result.rows.length}):</b>\n\n`;
+        const buttons = [];
+        
+        result.rows.forEach((p, i) => {
+            const date = new Date(p.created_at).toLocaleDateString('ro-RO');
+            const statusEmoji = {
+                'discovering': '🔍',
+                'skills_check': '🔧',
+                'ready_to_execute': '⏳',
+                'executing': '⚙️',
+                'completed': '✅',
+                'failed': '❌'
+            }[p.status] || '📋';
+            
+            message += `${i + 1}. ${statusEmoji} <b>${p.name || 'Proiect #' + p.id}</b>\n`;
+            message += `   Status: ${p.status} | ${date}\n\n`;
+            
+            buttons.push([{text: `Selectează #${p.id}`, callback_data: `select_project_${p.id}`}]);
+        });
+        
+        await ctx.reply(message, {
+            parse_mode: 'HTML',
+            reply_markup: { inline_keyboard: buttons }
+        });
+        
+    } catch (err) {
+        console.error('Eroare /projects:', err);
+        ctx.reply('❌ Eroare la încărcarea proiectelor.');
+    }
+});
+
 // Comanda /help
 bot.command('help', async (ctx) => {
     await ctx.reply(
@@ -121,8 +166,8 @@ bot.on('text', async (ctx) => {
     if (!session) {
         // Creăm proiect nou în DB
         const result = await query(
-            'INSERT INTO projects (name, status) VALUES ($1, $2) RETURNING id',
-            ['New Project', 'discovering']
+            'INSERT INTO projects (user_id, name, status) VALUES ($1, $2, $3) RETURNING id',
+            [userId, 'New Project', 'discovering']
         );
         
         const projectId = result.rows[0].id;
@@ -274,6 +319,45 @@ bot.action(/skip_skills_(.+)/, async (ctx) => {
             inline_keyboard: [[{text: '🚀 START Execuție', callback_data: `start_execution_${projectId}`}]]
         }
     });
+});
+
+bot.action(/select_project_(.+)/, async (ctx) => {
+    const projectId = ctx.match[1];
+    const userId = ctx.from.id;
+    
+    await ctx.answerCbQuery('📂 Se încarcă proiectul...');
+    
+    try {
+        // Verificăm că proiectul aparține userului
+        const project = await query(
+            'SELECT * FROM projects WHERE id = $1 AND user_id = $2',
+            [projectId, userId]
+        );
+        
+        if (!project.rows[0]) {
+            return ctx.reply('❌ Proiect negăsit sau nu ai acces.');
+        }
+        
+        // Activăm sesiunea
+        userSessions[userId] = {
+            projectId: parseInt(projectId),
+            step: project.rows[0].status === 'discovering' ? 'discovery' : 'executing',
+            chatId: ctx.chat.id
+        };
+        
+        const p = project.rows[0];
+        await ctx.reply(
+            `📂 <b>Proiect activat:</b> #${p.id}\n\n` +
+            `📝 ${p.name || 'Proiect nou'}\n` +
+            `📌 Status: ${p.status}\n\n` +
+            `Poți continua lucrul. Scrie-mi ce vrei să facem!`,
+            { parse_mode: 'HTML' }
+        );
+        
+    } catch (err) {
+        console.error('Eroare selectare proiect:', err);
+        ctx.reply('❌ Eroare la încărcarea proiectului.');
+    }
 });
 
 bot.action('show_examples', async (ctx) => {

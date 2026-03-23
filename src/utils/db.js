@@ -26,6 +26,7 @@ module.exports = {
             await pool.query(`
                 CREATE TABLE IF NOT EXISTS projects (
                     id SERIAL PRIMARY KEY,
+                    user_id BIGINT,
                     name VARCHAR(255),
                     description TEXT,
                     status VARCHAR(50) DEFAULT 'discovering',
@@ -104,6 +105,9 @@ module.exports = {
                     created_at TIMESTAMP DEFAULT NOW()
                 )
             `);
+
+                        // Adăugăm index pe user_id
+            await pool.query(`CREATE INDEX IF NOT EXISTS idx_projects_user_id ON projects(user_id)`).catch(() => {});
 
             console.log('✅ Tabele create/verificate');
         } catch (err) {
