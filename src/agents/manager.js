@@ -51,12 +51,12 @@ Primești răspunsurile userului și decizi dacă mai ai nevoie de întrebări.`
         await this.saveMessage(projectId, 'user', userResponse);
 
         // Luăm istoricul complet
-        const history = await query(
-            'SELECT role, content FROM conversations WHERE project_id = $1 ORDER BY created_at',
-            [projectId]
-        );
-
-        const messages = history.map(h => ({role: h.role, content: h.content}));
+        const result = await query(
+    'SELECT role, content FROM conversations WHERE project_id = $1 ORDER BY created_at',
+    [projectId]
+);
+const history = result.rows;
+const messages = history.map(h => ({role: h.role, content: h.content}));
         
         // Adăugăm instrucțiunea de system la început
         messages.unshift({
