@@ -158,7 +158,8 @@ Când ai suficiente informații, răspunde cu [DISCOVERY_COMPLETE] și sumarul.`
                 );
             }
         } catch (error) {
-            await logger.error('Eroare verificare skills', { projectId, error: error.message });
+            await logger.error('Eroare verificare skills', { projectId, error: error.message, stack: error.stack });
+            console.error('❌ Detalii eroare skills:', error);
             // Continuăm chiar dacă verificarea eșuează
             await this.bot.telegram.sendMessage(chatId, 
                 `⚠️ Nu am putut verifica skills, dar continuăm cu execuția.`,

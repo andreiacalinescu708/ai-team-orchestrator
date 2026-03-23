@@ -23,11 +23,17 @@ class SkillRegistry {
      * Obține toate skills disponibile din DB
      */
     async getAvailableSkills() {
-        const result = await query(
-            'SELECT * FROM skills WHERE status = $1 ORDER BY category, name',
-            ['active']
-        );
-        return result.rows;
+        try {
+            const result = await query(
+                'SELECT * FROM skills WHERE status = $1 ORDER BY category, name',
+                ['active']
+            );
+            console.log('📚 Skills din DB:', result.rows.length);
+            return result.rows;
+        } catch (err) {
+            console.error('❌ Eroare query skills:', err);
+            return [];
+        }
     }
 
     /**

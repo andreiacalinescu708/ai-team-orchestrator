@@ -20,13 +20,17 @@ class SkillManagerAgent {
      */
     async analyzeRequirements(discoveryData) {
         await logger.info('Analizez cerințe pentru skills');
+        console.log('🔍 Discovery data:', JSON.stringify(discoveryData).substring(0, 200));
 
         // 1. Detectăm skills necesare
         const requirements = await this.registry.analyzeProjectRequirements(discoveryData);
+        console.log('📋 Requirements:', requirements);
         
         // 2. Găsim skills lipsă
-        const allRequired = [...requirements.required, ...requirements.optional];
+        const allRequired = [...(requirements.required || []), ...(requirements.optional || [])];
+        console.log('🔍 Căutăm skills lipsă din:', allRequired);
         const missing = await this.registry.findMissingSkills(allRequired);
+        console.log('❌ Skills lipsă:', missing);
 
         // 3. Căutăm alternative pentru cele lipsă
         const alternatives = {};
