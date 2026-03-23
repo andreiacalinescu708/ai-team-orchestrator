@@ -109,6 +109,13 @@ module.exports = {
                         // Adăugăm index pe user_id
             await pool.query(`CREATE INDEX IF NOT EXISTS idx_projects_user_id ON projects(user_id)`).catch(() => {});
 
+            // Migrație: Adăugăm user_id dacă nu există
+            try {
+                await pool.query('ALTER TABLE projects ADD COLUMN IF NOT EXISTS user_id BIGINT');
+            } catch (e) {
+                // Coloana poate exista deja
+            }
+
             console.log('✅ Tabele create/verificate');
         } catch (err) {
             console.error('❌ Eroare creare tabele:', err);
