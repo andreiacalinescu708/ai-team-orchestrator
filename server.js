@@ -4,6 +4,7 @@ const express = require('express');
 const { initDB, query } = require('./src/utils/db');
 const { initLogsTable } = require('./src/utils/logger');
 const { ManagerAgent } = require('./src/agents/manager');
+const { SkillManagerAgent } = require('./src/agents/skill-manager');
 const { listProjectFiles } = require('./src/utils/project');
 
 const app = express();
@@ -76,6 +77,12 @@ bot.command('reset', async (ctx) => {
     const userId = ctx.from.id;
     delete userSessions[userId];
     await ctx.reply('🔄 Sesiune resetată. Folosește /start pentru a începe un proiect nou.');
+});
+
+// Comanda /skills
+bot.command('skills', async (ctx) => {
+    const skillManager = new SkillManagerAgent(bot);
+    await skillManager.listSkills(ctx.chat.id);
 });
 
 // Comanda /help
@@ -208,6 +215,60 @@ bot.action('new_project', async (ctx) => {
     const userId = ctx.from.id;
     delete userSessions[userId];
     await ctx.reply('🆕 Sesiune resetată. Scrie-mi ce vrei să construim!');
+});
+
+// Handler pentru generare skills
+bot.action(/generate_skills_(.+)/, async (ctx) => {
+    const projectId = ctx.match[1];
+    const userId = ctx.from.id;
+    
+    await ctx.answerCbQuery('🔄 Generez skills...');
+    
+    // Obținem analysis salvat
+    const project = await query('SELECT discovery_data FROM projects WHERE id = $1', [projectId]);
+    const analysis = project.rows[0]?.discovery_data?.skill_analysis;
+    
+    if (!analysis || analysis.missing.length === 0) {
+        return ctx.reply('Nu am găsit skills de generat. Pornim execuția?', {
+            reply_markup: {
+                inline_keyboard: [[{text: '🚀 START', callback_data: `start_execution_${projectId}`}]]
+            }
+        });
+    }
+    
+    // Salvăm sesiunea
+    userSessions[userId] = { projectId: parseInt(projectId), step: 'generating_skills', chatId: ctx.chat.id };
+    
+    // Generăm skills
+    const skillManager = new SkillManagerAgent(bot);
+    await skillManager.generateAndSaveSkills(ctx.chat.id, projectId, analysis.missing);
+});
+
+bot.action(/manual_skills_(.+)/, async (ctx) => {
+    const projectId = ctx.match[1];
+    await ctx.answerCbQuery();
+    await ctx.reply(
+        `📝 Pentru a adăuga manual skills:\n\n` +
+        `1. Creează un fișier în <code>src/skills/generated/</code>\n` +
+        `2. Sau folosește comanda <code>/skills add &lt;nume&gt;</code>\n\n` +
+        `După ce adaugi skills, apasă START:`,
+        {
+            parse_mode: 'HTML',
+            reply_markup: {
+                inline_keyboard: [[{text: '🚀 START', callback_data: `start_execution_${projectId}`}]]
+            }
+        }
+    );
+});
+
+bot.action(/skip_skills_(.+)/, async (ctx) => {
+    const projectId = ctx.match[1];
+    await ctx.answerCbQuery('⏭️ Sărim peste...');
+    await ctx.reply('⏭️ Continuăm fără skills lipsă. Poate nu vor fi necesare sau vom folosi alternative.', {
+        reply_markup: {
+            inline_keyboard: [[{text: '🚀 START Execuție', callback_data: `start_execution_${projectId}`}]]
+        }
+    });
 });
 
 bot.action('show_examples', async (ctx) => {

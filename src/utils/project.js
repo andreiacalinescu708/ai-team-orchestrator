@@ -1,5 +1,5 @@
 const path = require('path');
-const { fileExists, createProjectStructure } = require('../skills/file-operations');
+const { fileExists, createProjectStructure: createStructure } = require('../skills/file-operations');
 
 const PROJECTS_BASE_PATH = process.env.PROJECTS_PATH || path.join(process.cwd(), 'projects');
 
@@ -30,7 +30,7 @@ async function createProjectStructure(projectId, projectName) {
         }
     ];
 
-    await createProjectStructure(PROJECTS_BASE_PATH, structure);
+    await createStructure(PROJECTS_BASE_PATH, structure);
     
     return {
         path: projectPath,

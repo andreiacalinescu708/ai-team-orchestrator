@@ -2,6 +2,7 @@ const { callKimiFast, callKimiThinking } = require('../utils/kimi-optimized');
 const { query } = require('../utils/db');
 const { PlanExecutor } = require('../executor');
 const { Logger } = require('../utils/logger');
+const { SkillManagerAgent } = require('./skill-manager');
 
 const logger = new Logger('ManagerAgent');
 
@@ -118,21 +119,58 @@ Când ai suficiente informații, răspunde cu [DISCOVERY_COMPLETE] și sumarul.`
         // Salvăm în proiect
         await query(
             'UPDATE projects SET discovery_data = $1, status = $2 WHERE id = $3',
-            [JSON.stringify(discoveryData), 'ready_to_execute', projectId]
+            [JSON.stringify(discoveryData), 'skills_check', projectId]
         );
 
         await this.bot.telegram.sendMessage(chatId, 
-            `✅ Discovery complet!\n\n<b>Sumar:</b>\n${summary.substring(0, 500)}${summary.length > 500 ? '...' : ''}\n\nPornim execuția?`,
-            {
-                parse_mode: 'HTML',
-                reply_markup: {
-                    inline_keyboard: [
-                        [{text: '🚀 START', callback_data: `start_execution_${projectId}`}],
-                        [{text: '⏭️ Sari la execuție', callback_data: `skip_to_execute_${projectId}`}]
-                    ]
-                }
-            }
+            `✅ Discovery complet!\n\n<b>Sumar:</b>\n${summary.substring(0, 500)}${summary.length > 500 ? '...' : ''}\n\n` +
+            `Analizez skills necesare...`,
+            { parse_mode: 'HTML' }
         );
+
+        // Verificăm skills necesare
+        await this.checkRequiredSkills(chatId, projectId, discoveryData);
+    }
+
+    /**
+     * Verifică skills necesare și propune generarea automată
+     */
+    async checkRequiredSkills(chatId, projectId, discoveryData) {
+        const skillManager = new SkillManagerAgent(this.bot);
+        
+        try {
+            const analysis = await skillManager.analyzeRequirements(discoveryData);
+            
+            if (analysis.missing.length > 0) {
+                // Avem skills lipsă - oferim opțiuni
+                await skillManager.handleMissingSkills(chatId, projectId, analysis);
+            } else {
+                // Toate skills sunt disponibile
+                await this.bot.telegram.sendMessage(chatId, 
+                    `✅ Toate skills sunt disponibile!\n\nPornim execuția?`,
+                    {
+                        reply_markup: {
+                            inline_keyboard: [
+                                [{text: '🚀 START', callback_data: `start_execution_${projectId}`}]
+                            ]
+                        }
+                    }
+                );
+            }
+        } catch (error) {
+            await logger.error('Eroare verificare skills', { projectId, error: error.message });
+            // Continuăm chiar dacă verificarea eșuează
+            await this.bot.telegram.sendMessage(chatId, 
+                `⚠️ Nu am putut verifica skills, dar continuăm cu execuția.`,
+                {
+                    reply_markup: {
+                        inline_keyboard: [
+                            [{text: '🚀 START', callback_data: `start_execution_${projectId}`}]
+                        ]
+                    }
+                }
+            );
+        }
     }
 
     /**
