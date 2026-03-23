@@ -1,27 +1,40 @@
-const { callKimi } = require('../utils/kimi');
+const { callKimiFast, callKimiThinking } = require('../utils/kimi-optimized');
 const { query } = require('../utils/db');
+const { PlanExecutor } = require('../executor');
+const { Logger } = require('../utils/logger');
 
+const logger = new Logger('ManagerAgent');
+
+/**
+ * Manager Agent
+ * Orchestrază întregul proces de discovery și execuție
+ */
 class ManagerAgent {
     constructor(bot) {
-        this.bot = bot; // Referință la botul Telegram pentru a răspunde
+        this.bot = bot;
     }
 
+    /**
+     * Pornește faza de discovery
+     */
     async startDiscovery(chatId, projectId, initialRequest) {
+        await logger.info('Începe discovery', { projectId, chatId });
+
         // Salvăm proiectul
         await query(
             'UPDATE projects SET description = $1 WHERE id = $2',
             [initialRequest, projectId]
         );
 
-        // Primul mesaj pentru a obține prima întrebare
+        // Folosim modelul FAST pentru răspuns rapid
         const messages = [
             {
                 role: 'system',
                 content: `Ești Manager de Proiect AI. Faci discovery pentru: "${initialRequest}"
-Trebuie să aduni informații până ai 90% claritate.
+Trebuie să aduni informații până ai claritate suficientă.
 Pune întrebări one-by-one, nu pe toate odată.
-Când ai suficiente informații, răspunde cu [DISCOVERY_COMPLETE] și sumarul.
-Primești răspunsurile userului și decizi dacă mai ai nevoie de întrebări.`
+Fii concis și direct.
+Când ai suficiente informații, răspunde cu [DISCOVERY_COMPLETE] și sumarul.`
             },
             {
                 role: 'user',
@@ -29,13 +42,13 @@ Primești răspunsurile userului și decizi dacă mai ai nevoie de întrebări.`
             }
         ];
 
-        const response = await callKimi(messages);
+        const response = await callKimiFast(messages);
         
         // Salvăm în DB
         await this.saveMessage(projectId, 'assistant', response.content);
         
         // Trimitem în Telegram
-        await this.bot.telegram.sendMessage(chatId, `🔍 [Discovery] ${response.content}`, {
+        await this.bot.telegram.sendMessage(chatId, `🔍 ${response.content}`, {
             reply_markup: {
                 inline_keyboard: [
                     [{text: '⏭️ Sari peste discovery', callback_data: `skip_discovery_${projectId}`}]
@@ -46,26 +59,33 @@ Primești răspunsurile userului și decizi dacă mai ai nevoie de întrebări.`
         return response.content;
     }
 
+    /**
+     * Procesează răspunsul utilizatorului în faza discovery
+     */
     async handleDiscoveryResponse(chatId, projectId, userResponse) {
         // Salvăm răspunsul userului
         await this.saveMessage(projectId, 'user', userResponse);
 
         // Luăm istoricul complet
         const result = await query(
-    'SELECT role, content FROM conversations WHERE project_id = $1 ORDER BY created_at',
-    [projectId]
-);
-const history = result.rows;
-const messages = history.map(h => ({role: h.role, content: h.content}));
+            'SELECT role, content FROM conversations WHERE project_id = $1 ORDER BY created_at',
+            [projectId]
+        );
+        
+        const history = result.rows;
+        const messages = history.map(h => ({role: h.role, content: h.content}));
         
         // Adăugăm instrucțiunea de system la început
         messages.unshift({
             role: 'system',
-            content: 'Continui discovery. Dacă ai toate informațiile necesare, răspunde exact cu [DISCOVERY_COMPLETE] urmat de sumar JSON.'
+            content: 'Continui discovery. Dacă ai toate informațiile necesare, răspunde exact cu [DISCOVERY_COMPLETE] urmat de sumar JSON cu: appType, techStack, entities, features.'
         });
 
-        const response = await callKimi(messages);
-        await this.saveMessage(projectId, 'manager', response.content);
+        // Afișăm typing indicator
+        await this.bot.telegram.sendChatAction(chatId, 'typing');
+
+        const response = await callKimiFast(messages);
+        await this.saveMessage(projectId, 'assistant', response.content);
 
         // Verificăm dacă e complet
         if (response.content.includes('[DISCOVERY_COMPLETE]')) {
@@ -75,115 +95,125 @@ const messages = history.map(h => ({role: h.role, content: h.content}));
         }
     }
 
+    /**
+     * Finalizează faza discovery
+     */
     async completeDiscovery(chatId, projectId, completionText) {
-        // Extragem sumarul (după [DISCOVERY_COMPLETE])
+        await logger.info('Discovery complet', { projectId });
+
+        // Extragem sumarul
         const summary = completionText.split('[DISCOVERY_COMPLETE]')[1] || completionText;
+        
+        // Parsăm JSON-ul dacă există
+        let discoveryData;
+        try {
+            const jsonMatch = summary.match(/\{[\s\S]*\}/);
+            if (jsonMatch) {
+                discoveryData = JSON.parse(jsonMatch[0]);
+            }
+        } catch (e) {
+            discoveryData = { summary: summary.trim() };
+        }
         
         // Salvăm în proiect
         await query(
             'UPDATE projects SET discovery_data = $1, status = $2 WHERE id = $3',
-            [JSON.stringify({summary}), 'skills_check', projectId]
+            [JSON.stringify(discoveryData), 'ready_to_execute', projectId]
         );
 
         await this.bot.telegram.sendMessage(chatId, 
-            `✅ Discovery complet!\n\n${summary}\n\nAcum verific ce skills am nevoie...`,
-            {parse_mode: 'HTML'}
-        );
-
-        // Trecem la verificare skills
-        await this.checkRequiredSkills(chatId, projectId);
-    }
-
-    async checkRequiredSkills(chatId, projectId) {
-        const project = await query('SELECT * FROM projects WHERE id = $1', [projectId]);
-        const discovery = project.rows[0].discovery_data;
-
-        const messages = [
+            `✅ Discovery complet!\n\n<b>Sumar:</b>\n${summary.substring(0, 500)}${summary.length > 500 ? '...' : ''}\n\nPornim execuția?`,
             {
-                role: 'system',
-                content: `Analizează cerința și determină ce skill-uri sunt necesare din lista:
-- write_file (scriere fișiere)
-- read_file (citire fișiere)  
-- query_database (PostgreSQL)
-- generate_react_component (UI React)
-- create_express_route (API Node.js)
-- web_scraper (extragere web - dacă e cazul)
-- excel_generator (dacă generezi Excel)
-- email_sender (dacă trimite email)
-
-Răspunde JSON: {"required": ["skill1", "skill2"], "reasoning": "pentru că..."}`
-            },
-            {
-                role: 'user',
-                content: JSON.stringify(discovery)
-            }
-        ];
-
-        const analysis = await callKimi(messages);
-        const required = JSON.parse(analysis.content).required;
-
-        // Verificăm ce avem în DB
-        const available = await query('SELECT name FROM skills WHERE status = $1', ['active']);
-        const availableNames = available.rows.map(r => r.name);
-        
-        const missing = required.filter(r => !availableNames.includes(r));
-
-        if (missing.length === 0) {
-            await this.bot.telegram.sendMessage(chatId, 
-                `✅ Am toate skill-urile necesare: ${required.join(', ')}`
-            );
-            await this.createPlan(chatId, projectId);
-        } else {
-            await this.bot.telegram.sendMessage(chatId,
-                `⚠️ Lipsesc skill-uri: ${missing.join(', ')}\n\n` +
-                `Ce facem?\n` +
-                `1. Folosim variante alternative disponibile\n` +
-                `2. Tu adaugi manual skill-urile în Dashboard\n` +
-                `3. Simplificăm cerința`,
-                {
-                    reply_markup: {
-                        inline_keyboard: [
-                            [{text: '🔧 Folosește alternative', callback_data: `adapt_skills_${projectId}`}],
-                            [{text: '➕ Adaug eu skill-uri', callback_data: `manual_skills_${projectId}`}],
-                            [{text: '✂️ Simplifică', callback_data: `simplify_${projectId}`}]
-                        ]
-                    }
-                }
-            );
-        }
-    }
-
-    async createPlan(chatId, projectId) {
-        await this.bot.telegram.sendMessage(chatId, '📋 Creez planul de execuție...');
-        
-        // Aici va fi logica de planificare cu cei 5 workers
-        // Pentru MVP, facem un plan simplu secvențial
-        
-        const plan = [
-            {step: 1, worker: 'architect', task: 'Proiectează schema DB', status: 'pending'},
-            {step: 2, worker: 'backend', task: 'Generează API Express', status: 'pending'},
-            {step: 3, worker: 'frontend', task: 'Crează componente React', status: 'pending'},
-            {step: 4, worker: 'devops', task: 'Configurare deploy', status: 'pending'}
-        ];
-
-        await query(
-            'UPDATE projects SET status = $1 WHERE id = $2',
-            ['ready_to_execute', projectId]
-        );
-
-        await this.bot.telegram.sendMessage(chatId,
-            `✅ Plan creat:\n\n` +
-            plan.map(p => `${p.step}. ${p.worker}: ${p.task}`).join('\n') +
-            `\n\nStart execuție?`,
-            {
+                parse_mode: 'HTML',
                 reply_markup: {
                     inline_keyboard: [
                         [{text: '🚀 START', callback_data: `start_execution_${projectId}`}],
-                        [{text: '✏️ Modifică plan', callback_data: `modify_plan_${projectId}`}]
+                        [{text: '⏭️ Sari la execuție', callback_data: `skip_to_execute_${projectId}`}]
                     ]
                 }
             }
         );
+    }
+
+    /**
+     * Pornește execuția planului
+     */
+    async startExecution(chatId, projectId) {
+        await logger.info('Pornește execuție', { projectId, chatId });
+
+        // Obținem datele proiectului
+        const project = await query('SELECT * FROM projects WHERE id = $1', [projectId]);
+        if (!project.rows[0]) {
+            throw new Error('Proiect negăsit');
+        }
+
+        const discoveryData = project.rows[0].discovery_data || {};
+
+        // Pornim execuția în background
+        await this.bot.telegram.sendMessage(chatId, '🚀 Execuție pornită! Voi trimite update-uri pe parcurs.');
+
+        // Creăm executor și pornim
+        const executor = new PlanExecutor(this.bot, chatId);
+        
+        // Executăm asincron pentru a nu bloca răspunsul
+        executor.executePlan(projectId, discoveryData)
+            .then(result => {
+                this.sendCompletionMessage(chatId, projectId, result);
+            })
+            .catch(error => {
+                console.error('Eroare execuție:', error);
+                this.bot.telegram.sendMessage(chatId, `❌ Execuție eșuată: ${error.message}`);
+            });
+    }
+
+    /**
+     * Trimite mesaj de finalizare cu opțiuni
+     */
+    async sendCompletionMessage(chatId, projectId, result) {
+        const message = `✅ <b>Proiect complet!</b>
+
+⏱️ Durată: ${result.duration}s
+📁 Fișiere generate: ${result.files.length}
+🏗️ Stack: ${result.architecture?.techStack?.frontend || 'React'} + ${result.architecture?.techStack?.backend || 'Express'}
+
+Ce dorești să faci?`;
+
+        await this.bot.telegram.sendMessage(chatId, message, {
+            parse_mode: 'HTML',
+            reply_markup: {
+                inline_keyboard: [
+                    [{text: '📁 Vezi fișierele', callback_data: `view_files_${projectId}`}],
+                    [{text: '⬇️ Download ZIP', callback_data: `download_${projectId}`}],
+                    [{text: '🔄 Generează alt proiect', callback_data: 'new_project'}]
+                ]
+            }
+        });
+    }
+
+    /**
+     * Listează fișierele unui proiect
+     */
+    async listProjectFiles(chatId, projectId) {
+        const { listProjectFiles } = require('../utils/project');
+        
+        try {
+            const files = await listProjectFiles(projectId);
+            
+            // Împărțim în chunks de 50 de fișiere (limită Telegram)
+            const chunks = [];
+            for (let i = 0; i < files.length; i += 50) {
+                chunks.push(files.slice(i, i + 50));
+            }
+
+            for (const chunk of chunks) {
+                const fileList = chunk.map((f, i) => `${i + 1}. \`${f}\``).join('\n');
+                await this.bot.telegram.sendMessage(chatId, `📁 Fișiere:\n${fileList}`, {
+                    parse_mode: 'Markdown'
+                });
+            }
+        } catch (err) {
+            await this.bot.telegram.sendMessage(chatId, `❌ Eroare: ${err.message}`);
+        }
     }
 
     async saveMessage(projectId, role, content, metadata = {}) {

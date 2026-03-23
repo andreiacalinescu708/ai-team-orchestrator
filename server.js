@@ -2,7 +2,9 @@ require('dotenv').config();
 const { Telegraf } = require('telegraf');
 const express = require('express');
 const { initDB, query } = require('./src/utils/db');
+const { initLogsTable } = require('./src/utils/logger');
 const { ManagerAgent } = require('./src/agents/manager');
+const { listProjectFiles } = require('./src/utils/project');
 
 const app = express();
 const bot = new Telegraf(process.env.TELEGRAM_BOT_TOKEN);
@@ -14,34 +16,116 @@ app.use(express.json());
 // Stare sesiuni (cine ce proiect are activ)
 const userSessions = {};
 
+// ==================== COMENZI TELEGRAM ====================
+
 // Comanda /start
 bot.command('start', async (ctx) => {
     const chatId = ctx.chat.id;
     const userId = ctx.from.id;
+    const username = ctx.from.username || ctx.from.first_name;
     
-    await ctx.reply('🤖 AI Team Manager pornit.\n\nCe vrei să construim astăzi?\n(describe your project idea)');
-    
-    // Creăm proiect nou în DB
-    const result = await query(
-        'INSERT INTO projects (name, status) VALUES ($1, $2) RETURNING id',
-        ['New Project', 'discovering']
-    );
-    
-    const projectId = result.rows[0].id;
-    userSessions[userId] = { projectId, step: 'discovery', chatId };
-    
-    console.log(`Nou proiect creat: ${projectId} pentru user ${userId}`);
+    await ctx.reply(`👋 Salut ${username}!\n\nSunt AI Team Orchestrator. Îmi poți cere să creez aplicații web complete.\n\nCe vrei să construim astăzi?`, {
+        reply_markup: {
+            inline_keyboard: [
+                [{text: '📝 Exemple proiecte', callback_data: 'show_examples'}]
+            ]
+        }
+    });
 });
 
-// Handler mesaje text (Discovery)
-bot.on('text', async (ctx) => {
+// Comanda /status
+bot.command('status', async (ctx) => {
     const userId = ctx.from.id;
-    const text = ctx.message.text;
     const session = userSessions[userId];
     
     if (!session) {
-        return ctx.reply('Folosește /start pentru a începe un proiect nou.');
+        return ctx.reply('Nu ai un proiect activ. Folosește /start pentru a începe.');
     }
+    
+    try {
+        const project = await query('SELECT * FROM projects WHERE id = $1', [session.projectId]);
+        if (project.rows[0]) {
+            const p = project.rows[0];
+            ctx.reply(
+                `📊 Status proiect #${p.id}:\n\n` +
+                `📝 ${p.name}\n` +
+                `📌 Status: ${p.status}\n` +
+                `💰 Cost estimat: $${p.total_cost || 0}\n` +
+                `📅 Creat: ${p.created_at.toLocaleDateString()}`
+            );
+        }
+    } catch (err) {
+        ctx.reply('❌ Eroare la obținerea statusului.');
+    }
+});
+
+// Comanda /files
+bot.command('files', async (ctx) => {
+    const userId = ctx.from.id;
+    const session = userSessions[userId];
+    
+    if (!session) {
+        return ctx.reply('Nu ai un proiect activ.');
+    }
+    
+    await manager.listProjectFiles(ctx.chat.id, session.projectId);
+});
+
+// Comanda /reset
+bot.command('reset', async (ctx) => {
+    const userId = ctx.from.id;
+    delete userSessions[userId];
+    await ctx.reply('🔄 Sesiune resetată. Folosește /start pentru a începe un proiect nou.');
+});
+
+// Comanda /help
+bot.command('help', async (ctx) => {
+    await ctx.reply(
+        `🤖 <b>AI Team Orchestrator - Comenzi</b>\n\n` +
+        `/start - Începe proiect nou\n` +
+        `/status - Vezi status proiect curent\n` +
+        `/files - Listează fișierele generate\n` +
+        `/reset - Resetează sesiunea\n` +
+        `/help - Acest mesaj\n\n` +
+        `<b>Cum funcționează:</b>\n` +
+        `1. Îmi spui ce aplicație vrei\n` +
+        `2. Îți pun câteva întrebări (discovery)\n` +
+        `3. Generez codul complet\n` +
+        `4. Primești fișierele gata de folosit`,
+        { parse_mode: 'HTML' }
+    );
+});
+
+// ==================== HANDLER MESAJE ====================
+
+// Handler mesaje text
+bot.on('text', async (ctx) => {
+    const userId = ctx.from.id;
+    const text = ctx.message.text;
+    const chatId = ctx.chat.id;
+    
+    // Ignorăm comenzile
+    if (text.startsWith('/')) return;
+    
+    let session = userSessions[userId];
+    
+    // Dacă nu există sesiune, creăm una nouă
+    if (!session) {
+        // Creăm proiect nou în DB
+        const result = await query(
+            'INSERT INTO projects (name, status) VALUES ($1, $2) RETURNING id',
+            ['New Project', 'discovering']
+        );
+        
+        const projectId = result.rows[0].id;
+        userSessions[userId] = { projectId, step: 'discovery', chatId };
+        session = userSessions[userId];
+        
+        console.log(`Nou proiect creat: ${projectId} pentru user ${userId}`);
+    }
+    
+    // Afișăm typing indicator
+    await ctx.sendChatAction('typing');
     
     if (session.step === 'discovery') {
         // Verificăm dacă e primul mesaj sau continuare
@@ -60,38 +144,145 @@ bot.on('text', async (ctx) => {
     }
 });
 
+// ==================== CALLBACK QUERIES ====================
+
 // Handler butoane (Callback queries)
 bot.action(/skip_discovery_(.+)/, async (ctx) => {
     const projectId = ctx.match[1];
+    const userId = ctx.from.id;
+    
     await ctx.answerCbQuery();
+    
+    userSessions[userId] = { 
+        projectId: parseInt(projectId), 
+        step: 'discovery', 
+        chatId: ctx.chat.id 
+    };
+    
     await manager.completeDiscovery(ctx.chat.id, projectId, 'Skipped by user. Manual specification.');
+});
+
+bot.action(/skip_to_execute_(.+)/, async (ctx) => {
+    const projectId = ctx.match[1];
+    
+    await ctx.answerCbQuery();
+    await manager.startExecution(ctx.chat.id, projectId);
 });
 
 bot.action(/start_execution_(.+)/, async (ctx) => {
     const projectId = ctx.match[1];
-    await ctx.answerCbQuery();
-    await ctx.reply('🚀 Execuție pornită! (Aici vine logica cu workers)');
-    // TODO: Implementare workers
+    const userId = ctx.from.id;
+    
+    await ctx.answerCbQuery('🚀 Pornim execuția...');
+    
+    // Salvăm sesiunea pentru /status și /files
+    userSessions[userId] = { 
+        projectId: parseInt(projectId), 
+        step: 'executing', 
+        chatId: ctx.chat.id 
+    };
+    
+    await manager.startExecution(ctx.chat.id, projectId);
 });
+
+bot.action(/view_files_(.+)/, async (ctx) => {
+    const projectId = ctx.match[1];
+    await ctx.answerCbQuery();
+    await manager.listProjectFiles(ctx.chat.id, projectId);
+});
+
+bot.action(/download_(.+)/, async (ctx) => {
+    const projectId = ctx.match[1];
+    await ctx.answerCbQuery('📦 Preparăm fișierele...');
+    
+    try {
+        // TODO: Implementare ZIP download
+        await ctx.reply('⬇️ Funcționalitatea de download va fi disponibilă curând!\n\nPoți accesa direct fișierele în folderul `projects/`.');
+    } catch (err) {
+        await ctx.reply('❌ Eroare la pregătirea fișierelor.');
+    }
+});
+
+bot.action('new_project', async (ctx) => {
+    await ctx.answerCbQuery();
+    const userId = ctx.from.id;
+    delete userSessions[userId];
+    await ctx.reply('🆕 Sesiune resetată. Scrie-mi ce vrei să construim!');
+});
+
+bot.action('show_examples', async (ctx) => {
+    await ctx.answerCbQuery();
+    await ctx.reply(
+        `💡 <b>Exemple de proiecte pe care le pot genera:</b>\n\n` +
+        `• <i>"Task management app cu React și Node.js"</i>\n` +
+        `• <i>"Blog platform cu autentificare și comentarii"</i>\n` +
+        `• <i>"E-commerce site cu coș de cumpărături"</i>\n` +
+        `• <i>"API de booking pentru hoteluri"</i>\n\n` +
+        `Ce vrei să construim?`,
+        { parse_mode: 'HTML' }
+    );
+});
+
+// ==================== WEB SERVER ====================
 
 // Health check pentru Railway
 app.get('/', (req, res) => {
-    res.json({status: 'AI Team Orchestrator running', timestamp: new Date()});
+    res.json({
+        status: 'AI Team Orchestrator running',
+        timestamp: new Date(),
+        version: '2.0.0'
+    });
 });
 
-// Inițializare
+// API pentru status proiect
+app.get('/api/projects/:id', async (req, res) => {
+    try {
+        const project = await query('SELECT * FROM projects WHERE id = $1', [req.params.id]);
+        if (project.rows[0]) {
+            res.json(project.rows[0]);
+        } else {
+            res.status(404).json({ error: 'Proiect negăsit' });
+        }
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// ==================== INIȚIALIZARE ====================
+
 async function start() {
-    await initDB();
-    
-    // Pornim botul
-    bot.launch();
-    console.log('🤖 Bot Telegram pornit');
-    
-    // Pornim serverul web (pentru Railway health checks)
-    const PORT = process.env.PORT || 3000;
-    app.listen(PORT, () => {
-        console.log(`🌐 Server web pornit pe port ${PORT}`);
-    });
+    try {
+        // Inițializare DB
+        await initDB();
+        await initLogsTable();
+        
+        // Pornim botul
+        bot.launch();
+        console.log('🤖 Bot Telegram pornit');
+        
+        // Pornim serverul web (pentru Railway health checks)
+        const PORT = process.env.PORT || 3000;
+        app.listen(PORT, () => {
+            console.log(`🌐 Server web pornit pe port ${PORT}`);
+        });
+
+        // Graceful shutdown
+        process.once('SIGINT', () => {
+            console.log('🛑 Oprire gracefully...');
+            bot.stop('SIGINT');
+            process.exit(0);
+        });
+        
+        process.once('SIGTERM', () => {
+            console.log('🛑 Oprire gracefully...');
+            bot.stop('SIGTERM');
+            process.exit(0);
+        });
+        
+    } catch (err) {
+        console.error('❌ Eroare pornire:', err);
+        process.exit(1);
+    }
 }
 
 start();

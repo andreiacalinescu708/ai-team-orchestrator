@@ -30,8 +30,10 @@ module.exports = {
                     description TEXT,
                     status VARCHAR(50) DEFAULT 'discovering',
                     discovery_data JSONB DEFAULT '{}',
+                    tech_stack JSONB DEFAULT '{}',
                     current_step INTEGER DEFAULT 0,
                     total_cost DECIMAL(10,2) DEFAULT 0.00,
+                    total_tokens INTEGER DEFAULT 0,
                     created_at TIMESTAMP DEFAULT NOW(),
                     updated_at TIMESTAMP DEFAULT NOW()
                 )
@@ -41,7 +43,7 @@ module.exports = {
             await pool.query(`
                 CREATE TABLE IF NOT EXISTS conversations (
                     id SERIAL PRIMARY KEY,
-                    project_id INTEGER REFERENCES projects(id),
+                    project_id INTEGER REFERENCES projects(id) ON DELETE CASCADE,
                     role VARCHAR(50),
                     content TEXT,
                     metadata JSONB DEFAULT '{}',
@@ -59,6 +61,47 @@ module.exports = {
                     parameters JSONB,
                     status VARCHAR(20) DEFAULT 'active',
                     usage_count INTEGER DEFAULT 0
+                )
+            `);
+
+            // Tabela task-uri pentru execuție
+            await pool.query(`
+                CREATE TABLE IF NOT EXISTS tasks (
+                    id SERIAL PRIMARY KEY,
+                    project_id INTEGER REFERENCES projects(id) ON DELETE CASCADE,
+                    worker VARCHAR(50),
+                    task_name VARCHAR(255),
+                    status VARCHAR(50) DEFAULT 'pending',
+                    result JSONB DEFAULT '{}',
+                    error TEXT,
+                    started_at TIMESTAMP,
+                    completed_at TIMESTAMP,
+                    created_at TIMESTAMP DEFAULT NOW()
+                )
+            `);
+
+            // Tabela fișiere generate
+            await pool.query(`
+                CREATE TABLE IF NOT EXISTS files (
+                    id SERIAL PRIMARY KEY,
+                    project_id INTEGER REFERENCES projects(id) ON DELETE CASCADE,
+                    path VARCHAR(500),
+                    size INTEGER,
+                    content_hash VARCHAR(64),
+                    created_at TIMESTAMP DEFAULT NOW()
+                )
+            `);
+
+            // Tabela logs
+            await pool.query(`
+                CREATE TABLE IF NOT EXISTS logs (
+                    id SERIAL PRIMARY KEY,
+                    project_id INTEGER REFERENCES projects(id) ON DELETE SET NULL,
+                    level VARCHAR(20) NOT NULL,
+                    module VARCHAR(100),
+                    message TEXT,
+                    metadata JSONB DEFAULT '{}',
+                    created_at TIMESTAMP DEFAULT NOW()
                 )
             `);
 
