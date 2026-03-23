@@ -32,7 +32,7 @@ Primești răspunsurile userului și decizi dacă mai ai nevoie de întrebări.`
         const response = await callKimi(messages);
         
         // Salvăm în DB
-        await this.saveMessage(projectId, 'manager', response.content);
+        await this.saveMessage(projectId, 'assistant', response.content);
         
         // Trimitem în Telegram
         await this.bot.telegram.sendMessage(chatId, `🔍 [Discovery] ${response.content}`, {
