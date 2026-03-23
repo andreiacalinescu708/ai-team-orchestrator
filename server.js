@@ -105,8 +105,9 @@ bot.command('help', async (ctx) => {
 
 // ==================== HANDLER MESAJE ====================
 
-// Handler mesaje text
+// Handler mesaje text cu error handling
 bot.on('text', async (ctx) => {
+    try {
     const userId = ctx.from.id;
     const text = ctx.message.text;
     const chatId = ctx.chat.id;
@@ -148,6 +149,10 @@ bot.on('text', async (ctx) => {
             // Răspuns la întrebare
             await manager.handleDiscoveryResponse(session.chatId, session.projectId, text);
         }
+    }
+    } catch (error) {
+        console.error('❌ Eroare procesare mesaj:', error);
+        await ctx.reply('❌ A apărut o eroare. Încearcă din nou sau folosește /reset pentru a reîncepe.');
     }
 });
 
