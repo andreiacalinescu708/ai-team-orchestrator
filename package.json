@@ -1,25 +1,24 @@
 {
   "name": "ai-team-orchestrator",
   "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
+  "description": "AI Team Manager with 6 agents",
+  "main": "server.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "start": "node server.js",
+    "dev": "nodemon server.js"
   },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
-  "type": "commonjs",
   "dependencies": {
-    "dotenv": "^17.3.1",
-    "express": "^5.2.1",
-    "node-cron": "^4.2.1",
-    "openai": "^6.32.0",
-    "pg": "^8.20.0",
-    "telegraf": "^4.16.3",
-    "ws": "^8.20.0"
+    "express": "^4.18.2",
+    "pg": "^8.11.3",
+    "telegraf": "^4.15.0",
+    "openai": "^4.20.0",
+    "dotenv": "^16.3.1",
+    "ws": "^8.14.2"
   },
   "devDependencies": {
-    "nodemon": "^3.1.14"
+    "nodemon": "^3.0.2"
+  },
+  "engines": {
+    "node": ">=18.0.0"
   }
 }
