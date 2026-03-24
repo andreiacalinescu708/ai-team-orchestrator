@@ -20,6 +20,13 @@ class SkillManagerAgent {
      */
     async analyzeRequirements(discoveryData) {
         await logger.info('Analizez cerințe pentru skills');
+        
+        // Safety check
+        if (!discoveryData) {
+            console.log('⚠️ Discovery data e gol/undefined!');
+            return { required: [], optional: [], missing: [], alternatives: {}, reasoning: '' };
+        }
+        
         console.log('🔍 Discovery data:', JSON.stringify(discoveryData).substring(0, 200));
 
         // 1. Detectăm skills necesare
