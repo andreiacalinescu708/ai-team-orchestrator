@@ -150,6 +150,141 @@ bot.command('help', async (ctx) => {
     );
 });
 
+// ==================== HANDLER FIȘIERE (PDF, etc.) ====================
+
+// Handler pentru documente (PDF)
+bot.on('document', async (ctx) => {
+    try {
+        const userId = ctx.from.id;
+        const document = ctx.message.document;
+        const chatId = ctx.chat.id;
+        
+        // Verificăm dacă e PDF
+        if (!document.file_name.endsWith('.pdf')) {
+            return ctx.reply('📄 Momentan procesez doar fișiere PDF. Trimite un PDF!');
+        }
+
+        const session = userSessions[userId];
+        if (!session) {
+            return ctx.reply('Nu ai un proiect activ. Folosește /start sau /projects');
+        }
+
+        await ctx.reply(`📄 Am primit PDF-ul: <b>${document.file_name}</b>\n\nCe vrei să fac cu el?\n\n` +
+                       `• "Extrage textul"\n` +
+                       `• "Fă-mi un rezumat"\n` +
+                       `• "Extrage datele facturii"\n` +
+                       `• "Generează PDF nou cu datele extrase"`,
+                       { parse_mode: 'HTML' });
+
+        // Salvăm referința la PDF în sesiune
+        session.pendingPDF = {
+            fileId: document.file_id,
+            fileName: document.file_name,
+            fileUniqueId: document.file_unique_id
+        };
+
+    } catch (error) {
+        console.error('❌ Eroare procesare document:', error);
+        ctx.reply('❌ Eroare la procesarea documentului.');
+    }
+});
+
+// Handler pentru mesaje text care procesază PDF-uri
+async function handlePDFCommand(ctx, text, session) {
+    const { PDFProcessor } = require('./src/skills/pdf-processor');
+    const pdf = new PDFProcessor();
+    
+    if (!session.pendingPDF) {
+        return false; // Nu e comandă PDF
+    }
+
+    try {
+        await ctx.sendChatAction('typing');
+        await ctx.reply('📄 <b>Procesez PDF-ul...</b>', { parse_mode: 'HTML' });
+
+        // Descărcăm PDF-ul
+        const fileLink = await ctx.telegram.getFileLink(session.pendingPDF.fileId);
+        const response = await fetch(fileLink);
+        const buffer = await response.arrayBuffer();
+        
+        const tempPath = `./temp/${session.pendingPDF.fileUniqueId}.pdf`;
+        await fs.promises.writeFile(tempPath, Buffer.from(buffer));
+
+        // Determinăm acțiunea
+        const action = text.includes('rezumat') ? 'summarize' :
+                      text.includes('factur') || text.includes('date') ? 'extract_invoice' :
+                      text.includes('tabel') ? 'tables' : 'extract';
+
+        let result;
+
+        if (action === 'summarize') {
+            const outputPath = `./temp/${session.pendingPDF.fileUniqueId}_summary.pdf`;
+            result = await pdf.processAndSummarize(tempPath, outputPath, { useAI: true, title: 'Rezumat Document' });
+            
+            if (result.success) {
+                await ctx.reply(`✅ <b>Rezumat generat!</b>\n\n<i>${result.summary.substring(0, 500)}...</i>`, { parse_mode: 'HTML' });
+                await ctx.replyWithDocument({ source: outputPath, filename: 'rezumat.pdf' });
+            }
+        } 
+        else if (action === 'extract_invoice') {
+            result = await pdf.extractStructuredData(tempPath, 'invoice');
+            
+            if (result.success) {
+                let message = `📋 <b>Date extrase:</b>\n\n`;
+                const data = result.extracted.data.invoice || {};
+                
+                if (data.client) message += `👤 <b>Client:</b> ${data.client}\n`;
+                if (data.invoiceNumber) message += `🧾 <b>Factura:</b> ${data.invoiceNumber}\n`;
+                if (data.date) message += `📅 <b>Data:</b> ${data.date}\n`;
+                if (data.total) message += `💰 <b>Total:</b> ${data.total}\n`;
+                
+                await ctx.reply(message, { parse_mode: 'HTML' });
+            }
+        }
+        else if (action === 'tables') {
+            result = await pdf.extractTables(tempPath);
+            
+            if (result.success) {
+                await ctx.reply(`📊 <b>Tabele găsite:</b> ${result.tables.length}`, { parse_mode: 'HTML' });
+                
+                for (let i = 0; i < Math.min(result.tables.length, 3); i++) {
+                    const table = result.tables[i];
+                    let tableText = `<b>Tabelul ${i + 1}:</b>\n`;
+                    tableText += `Header: ${table.headers.join(' | ')}\n`;
+                    tableText += `Rânduri: ${table.rows.length}\n`;
+                    await ctx.reply(tableText, { parse_mode: 'HTML' });
+                }
+            }
+        }
+        else {
+            // Extrage text simplu
+            result = await pdf.extractText(tempPath);
+            
+            if (result.success) {
+                const preview = result.text.substring(0, 3000);
+                await ctx.reply(`📖 <b>Text extras (${result.pages} pagini):</b>\n\n<pre>${preview}</pre>`, { parse_mode: 'HTML' });
+            }
+        }
+
+        // Cleanup
+        try {
+            await fs.promises.unlink(tempPath);
+            const outputPath = `./temp/${session.pendingPDF.fileUniqueId}_summary.pdf`;
+            if (fs.existsSync(outputPath)) await fs.promises.unlink(outputPath);
+        } catch (e) {}
+
+        // Ștergem PDF-ul pending
+        delete session.pendingPDF;
+        return true;
+
+    } catch (error) {
+        console.error('❌ Eroare procesare PDF:', error);
+        await ctx.reply(`❌ Eroare: ${error.message}`);
+        delete session.pendingPDF;
+        return true;
+    }
+}
+
 // ==================== HANDLER MESAJE ====================
 
 // Handler mesaje text cu error handling
@@ -203,6 +338,12 @@ bot.on('text', async (ctx) => {
             await manager.handleDiscoveryResponse(session.chatId, session.projectId, text);
         }
     } else {
+        // Verificăm dacă e comandă PDF pending
+        if (session.pendingPDF) {
+            const handled = await handlePDFCommand(ctx, text, session);
+            if (handled) return;
+        }
+
         // Încercăm mai întâi să vedem dacă e o comandă pentru agenți
         console.log(`💬 Verific dacă e comandă: "${text.substring(0, 30)}..."`);
         

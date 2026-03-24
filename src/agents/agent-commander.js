@@ -179,6 +179,11 @@ class AgentCommander {
 • "Download ZIP" - Descarcă proiectul
 • "Vezi structura" - Listează fișierele
 
+<b>📄 PDF Processing:</b>
+• Trimite PDF + "Extrage textul"
+• Trimite PDF + "Fă-mi rezumat"
+• Trimite PDF + "Extrage datele facturii"
+
 <b>⚙️ Configurare:</b>
 • "Setează JWT_SECRET=abc123" - Variabilă mediu
 • "Configurează DATABASE_URL" - Config DB

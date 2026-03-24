@@ -4,6 +4,7 @@ const { query } = require('../utils/db');
 const { Logger } = require('../utils/logger');
 const { GitHubExecutor } = require('./github-executor');
 const { DownloadExecutor } = require('./download-executor');
+const { PDFProcessor } = require('../skills/pdf-processor');
 
 const execAsync = promisify(exec);
 const logger = new Logger('CommandExecutor');
@@ -17,6 +18,7 @@ class CommandExecutor {
         this.railwayToken = process.env.RAILWAY_TOKEN;
         this.github = new GitHubExecutor(bot);
         this.downloader = new DownloadExecutor(bot);
+        this.pdf = new PDFProcessor();
     }
 
     /**
@@ -44,6 +46,8 @@ class CommandExecutor {
                 return await this.handleGitHub(chatId, projectId, intent);
             case 'download':
                 return await this.handleDownload(chatId, projectId, intent);
+            case 'pdf':
+                return await this.handlePDF(chatId, projectId, intent);
             default:
                 return { success: false, message: '❌ Comandă necunoscută' };
         }
@@ -360,6 +364,23 @@ class CommandExecutor {
             default:
                 return await this.downloader.sendProjectAsZip(chatId, projectId);
         }
+    }
+
+    /**
+     * Gestionează comenzi PDF
+     */
+    async handlePDF(chatId, projectId, intent) {
+        return {
+            success: true,
+            message: `📄 <b>Procesare PDF</b>\n\n` +
+                     `Pentru a procesa un PDF, trimite fișierul direct în chat.\n\n` +
+                     `Ce pot face:\n` +
+                     `• 📖 Extrage text și date\n` +
+                     `• 📊 Identifică tabele\n` +
+                     `• 📝 Generează rezumat\n` +
+                     `• 📄 Creează PDF nou\n\n` +
+                     `Trimite un PDF și scrie ce vrei să fac cu el!`
+        };
     }
 }
 

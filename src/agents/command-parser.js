@@ -14,6 +14,7 @@ class CommandParser {
             database: /baza de date|database|creaza tabela/i,
             github: /github|push|commit|repo|pull request|pr/i,
             download: /download|descarc[aă]|salveaz[aă]|zip|export/i,
+            pdf: /pdf|extrage|factura|raport|document/i,
             restart: /restart|reporneste|reincarca/i,
             status: /status|stare|cum merge|info/i,
             scale: /scale|scalare|instanțe|replici/i
@@ -133,6 +134,24 @@ class CommandParser {
                 description: type === 'zip' ? 'Descarcă proiect ca ZIP' :
                            type === 'structure' ? 'Vezi structura proiectului' :
                            'Descarcă fișier specific'
+            };
+        }
+
+        // PDF Processing
+        if (this.patterns.pdf.test(message)) {
+            const action = message.includes('extrage') ? 'extract' :
+                          message.includes('rezumat') || message.includes('sumarizeaz') ? 'summarize' :
+                          message.includes('genereaz') || message.includes('creaz') ? 'generate' :
+                          message.includes('tabel') ? 'tables' : 'extract';
+            
+            return {
+                type: 'pdf',
+                action: action,
+                confirmation: false,
+                description: action === 'extract' ? 'Extrage date din PDF' :
+                           action === 'summarize' ? 'Rezumă document PDF' :
+                           action === 'generate' ? 'Generează PDF nou' :
+                           'Extrage tabele din PDF'
             };
         }
 
