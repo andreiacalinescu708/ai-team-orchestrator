@@ -5,11 +5,13 @@ const { initDB, query } = require('./src/utils/db');
 const { initLogsTable } = require('./src/utils/logger');
 const { ManagerAgent } = require('./src/agents/manager');
 const { SkillManagerAgent } = require('./src/agents/skill-manager');
+const { AgentCommander } = require('./src/agents/agent-commander');
 const { listProjectFiles } = require('./src/utils/project');
 
 const app = express();
 const bot = new Telegraf(process.env.TELEGRAM_BOT_TOKEN);
 const manager = new ManagerAgent(bot);
+const commander = new AgentCommander(bot);
 
 // Middleware
 app.use(express.json());
@@ -201,13 +203,25 @@ bot.on('text', async (ctx) => {
             await manager.handleDiscoveryResponse(session.chatId, session.projectId, text);
         }
     } else {
-        // Conversație generală despre proiect
-        console.log(`💬 Conversație generală - proiect ${session.projectId}, text: ${text.substring(0, 30)}...`);
-        try {
-            await manager.handleGeneralChat(session.chatId, session.projectId, text);
-        } catch (chatError) {
-            console.error('❌ Eroare handleGeneralChat:', chatError);
-            throw chatError;
+        // Încercăm mai întâi să vedem dacă e o comandă pentru agenți
+        console.log(`💬 Verific dacă e comandă: "${text.substring(0, 30)}..."`);
+        
+        const commandResult = await commander.processMessage(
+            chatId, userId, session.projectId, text
+        );
+        
+        if (commandResult && commandResult.handled) {
+            // A fost procesat ca comandă
+            console.log('✅ Comandă procesată:', commandResult);
+        } else {
+            // Conversație generală
+            console.log('💬 Conversație generală');
+            try {
+                await manager.handleGeneralChat(session.chatId, session.projectId, text);
+            } catch (chatError) {
+                console.error('❌ Eroare handleGeneralChat:', chatError);
+                throw chatError;
+            }
         }
     }
     } catch (error) {
@@ -284,6 +298,50 @@ bot.action('new_project', async (ctx) => {
 });
 
 // Handler pentru generare skills
+// Handler pentru confirmări comenzi
+bot.action(/confirm_cmd_(.+)/, async (ctx) => {
+    const userId = ctx.from.id;
+    await ctx.answerCbQuery('⚡ Execut...');
+    await commander.handleConfirmation(ctx.chat.id, userId, 'confirm', ctx.match[0]);
+});
+
+bot.action(/cancel_cmd_(.+)/, async (ctx) => {
+    const userId = ctx.from.id;
+    await ctx.answerCbQuery('❌ Anulat');
+    await commander.handleConfirmation(ctx.chat.id, userId, 'cancel', ctx.match[0]);
+});
+
+// Shortcut commands
+bot.action('cmd_deploy', async (ctx) => {
+    await ctx.answerCbQuery();
+    const userId = ctx.from.id;
+    const session = userSessions[userId];
+    if (!session) {
+        return ctx.reply('Nu ai un proiect activ. Folosește /projects');
+    }
+    await commander.processMessage(ctx.chat.id, userId, session.projectId, 'deploy pe railway');
+});
+
+bot.action('cmd_logs', async (ctx) => {
+    await ctx.answerCbQuery();
+    await ctx.reply('Scrie "vezi logs backend" sau "vezi logs frontend"');
+});
+
+bot.action('cmd_status', async (ctx) => {
+    await ctx.answerCbQuery();
+    const userId = ctx.from.id;
+    const session = userSessions[userId];
+    if (!session) {
+        return ctx.reply('Nu ai un proiect activ. Folosește /projects');
+    }
+    await commander.processMessage(ctx.chat.id, userId, session.projectId, 'status');
+});
+
+// Comanda /commands - listează comenzi disponibile
+bot.command('commands', async (ctx) => {
+    await commander.listCommands(ctx.chat.id);
+});
+
 bot.action(/generate_skills_(.+)/, async (ctx) => {
     const projectId = ctx.match[1];
     const userId = ctx.from.id;
