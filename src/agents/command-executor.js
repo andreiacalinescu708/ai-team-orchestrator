@@ -3,6 +3,7 @@ const { promisify } = require('util');
 const { query } = require('../utils/db');
 const { Logger } = require('../utils/logger');
 const { GitHubExecutor } = require('./github-executor');
+const { DownloadExecutor } = require('./download-executor');
 
 const execAsync = promisify(exec);
 const logger = new Logger('CommandExecutor');
@@ -15,6 +16,7 @@ class CommandExecutor {
         this.bot = bot;
         this.railwayToken = process.env.RAILWAY_TOKEN;
         this.github = new GitHubExecutor(bot);
+        this.downloader = new DownloadExecutor(bot);
     }
 
     /**
@@ -40,6 +42,8 @@ class CommandExecutor {
                 return await this.manageDatabase(chatId, projectId, intent);
             case 'github':
                 return await this.handleGitHub(chatId, projectId, intent);
+            case 'download':
+                return await this.handleDownload(chatId, projectId, intent);
             default:
                 return { success: false, message: '❌ Comandă necunoscută' };
         }
@@ -333,6 +337,28 @@ class CommandExecutor {
                 return await this.github.getActionsStatus(chatId, projectId);
             default:
                 return { success: false, message: '❌ Acțiune GitHub necunoscută' };
+        }
+    }
+
+    /**
+     * Gestionează comenzi de download
+     */
+    async handleDownload(chatId, projectId, intent) {
+        switch (intent.downloadType) {
+            case 'zip':
+                return await this.downloader.sendProjectAsZip(chatId, projectId);
+            case 'structure':
+                return await this.downloader.listProjectStructure(chatId, projectId);
+            case 'file':
+                // Extragem path-ul fișierului din mesaj
+                return {
+                    success: true,
+                    message: `📁 <b>Fișiere disponibile</b>\n\n` +
+                             `Folosește <code>/files</code> pentru a vedea lista completă, ` +
+                             `apoi scrie "trimite fișierul backend/src/server.js"`
+                };
+            default:
+                return await this.downloader.sendProjectAsZip(chatId, projectId);
         }
     }
 }

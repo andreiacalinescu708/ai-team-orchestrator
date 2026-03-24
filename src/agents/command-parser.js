@@ -13,6 +13,7 @@ class CommandParser {
             env: /variabila|env|seteaza|configureaza/i,
             database: /baza de date|database|creaza tabela/i,
             github: /github|push|commit|repo|pull request|pr/i,
+            download: /download|descarc[aă]|salveaz[aă]|zip|export/i,
             restart: /restart|reporneste|reincarca/i,
             status: /status|stare|cum merge|info/i,
             scale: /scale|scalare|instanțe|replici/i
@@ -117,6 +118,21 @@ class CommandParser {
                            action === 'init' ? 'Initializează repo GitHub' :
                            action === 'pr' ? 'Crează Pull Request' :
                            'Status GitHub Actions'
+            };
+        }
+
+        // Download
+        if (this.patterns.download.test(message)) {
+            const type = message.includes('structur') ? 'structure' :
+                        message.includes('fișier') || message.includes('file') ? 'file' : 'zip';
+            
+            return {
+                type: 'download',
+                downloadType: type,
+                confirmation: false,
+                description: type === 'zip' ? 'Descarcă proiect ca ZIP' :
+                           type === 'structure' ? 'Vezi structura proiectului' :
+                           'Descarcă fișier specific'
             };
         }
 

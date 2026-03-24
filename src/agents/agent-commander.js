@@ -175,10 +175,13 @@ class AgentCommander {
 • "Rulează testele" - Execută teste
 • "Test backend" - Teste specifice
 
+<b>📥 Download:</b>
+• "Download ZIP" - Descarcă proiectul
+• "Vezi structura" - Listează fișierele
+
 <b>⚙️ Configurare:</b>
 • "Setează JWT_SECRET=abc123" - Variabilă mediu
 • "Configurează DATABASE_URL" - Config DB
-• "Scale 2 instanțe" - Scalare
 
 <b>🗄️ Baze de date:</b>
 • "Crează migrare" - Migrare DB
@@ -192,7 +195,8 @@ Scrie comanda în limbaj natural sau folosește butoanele de mai sus!`;
                 inline_keyboard: [
                     [{ text: '🚀 Deploy', callback_data: 'cmd_deploy' }],
                     [{ text: '📋 Logs', callback_data: 'cmd_logs' }],
-                    [{ text: '📊 Status', callback_data: 'cmd_status' }]
+                    [{ text: '📊 Status', callback_data: 'cmd_status' }],
+                    [{ text: '📥 Download ZIP', callback_data: 'cmd_download' }]
                 ]
             }
         });

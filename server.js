@@ -337,9 +337,29 @@ bot.action('cmd_status', async (ctx) => {
     await commander.processMessage(ctx.chat.id, userId, session.projectId, 'status');
 });
 
+bot.action('cmd_download', async (ctx) => {
+    await ctx.answerCbQuery();
+    const userId = ctx.from.id;
+    const session = userSessions[userId];
+    if (!session) {
+        return ctx.reply('Nu ai un proiect activ. Folosește /projects');
+    }
+    await commander.processMessage(ctx.chat.id, userId, session.projectId, 'download zip');
+});
+
 // Comanda /commands - listează comenzi disponibile
 bot.command('commands', async (ctx) => {
     await commander.listCommands(ctx.chat.id);
+});
+
+// Comanda /download - shortcut pentru download ZIP
+bot.command('download', async (ctx) => {
+    const userId = ctx.from.id;
+    const session = userSessions[userId];
+    if (!session) {
+        return ctx.reply('📭 Nu ai un proiect activ. Folosește /projects');
+    }
+    await commander.processMessage(ctx.chat.id, userId, session.projectId, 'download zip');
 });
 
 bot.action(/generate_skills_(.+)/, async (ctx) => {
