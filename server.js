@@ -199,10 +199,17 @@ bot.on('text', async (ctx) => {
         }
     } else {
         // Conversație generală despre proiect
-        await manager.handleGeneralChat(session.chatId, session.projectId, text);
+        console.log(`💬 Conversație generală - proiect ${session.projectId}, text: ${text.substring(0, 30)}...`);
+        try {
+            await manager.handleGeneralChat(session.chatId, session.projectId, text);
+        } catch (chatError) {
+            console.error('❌ Eroare handleGeneralChat:', chatError);
+            throw chatError;
+        }
     }
     } catch (error) {
-        console.error('❌ Eroare procesare mesaj:', error);
+        console.error('❌ Eroare procesare mesaj:', error.message);
+        console.error('Stack:', error.stack);
         await ctx.reply('❌ A apărut o eroare. Încearcă din nou sau folosește /reset pentru a reîncepe.');
     }
 });
