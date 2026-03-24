@@ -178,6 +178,9 @@ bot.on('text', async (ctx) => {
         session = userSessions[userId];
         
         console.log(`Nou proiect creat: ${projectId} pentru user ${userId}`);
+        
+        // Confirmare rapidă că am primit mesajul
+        await ctx.reply('✅ Mesaj primit! Analizez...');
     }
     
     // Afișăm typing indicator
