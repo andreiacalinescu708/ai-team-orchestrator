@@ -2,6 +2,7 @@ const { exec } = require('child_process');
 const { promisify } = require('util');
 const { query } = require('../utils/db');
 const { Logger } = require('../utils/logger');
+const { GitHubExecutor } = require('./github-executor');
 
 const execAsync = promisify(exec);
 const logger = new Logger('CommandExecutor');
@@ -13,6 +14,7 @@ class CommandExecutor {
     constructor(bot) {
         this.bot = bot;
         this.railwayToken = process.env.RAILWAY_TOKEN;
+        this.github = new GitHubExecutor(bot);
     }
 
     /**
@@ -36,6 +38,8 @@ class CommandExecutor {
                 return await this.restart(chatId, projectId, intent);
             case 'database':
                 return await this.manageDatabase(chatId, projectId, intent);
+            case 'github':
+                return await this.handleGitHub(chatId, projectId, intent);
             default:
                 return { success: false, message: '❌ Comandă necunoscută' };
         }
@@ -309,6 +313,27 @@ class CommandExecutor {
                      `• <code>railway run psql</code>\n\n` +
                      `Sau poți folosi Adminer/pgAdmin local.`
         };
+    }
+
+    /**
+     * Gestionează comenzi GitHub
+     */
+    async handleGitHub(chatId, projectId, intent) {
+        const project = await query('SELECT * FROM projects WHERE id = $1', [projectId]);
+        const projectName = project.rows[0]?.name || `Project ${projectId}`;
+
+        switch (intent.action) {
+            case 'init':
+                return await this.github.initRepo(chatId, projectId, projectName);
+            case 'push':
+                return await this.github.pushCode(chatId, projectId);
+            case 'pr':
+                return await this.github.createPullRequest(chatId, projectId, 'Update from Telegram');
+            case 'status':
+                return await this.github.getActionsStatus(chatId, projectId);
+            default:
+                return { success: false, message: '❌ Acțiune GitHub necunoscută' };
+        }
     }
 }
 

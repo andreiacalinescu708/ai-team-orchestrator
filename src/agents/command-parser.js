@@ -12,6 +12,7 @@ class CommandParser {
             test: /test|verifica|ruleaza test/i,
             env: /variabila|env|seteaza|configureaza/i,
             database: /baza de date|database|creaza tabela/i,
+            github: /github|push|commit|repo|pull request|pr/i,
             restart: /restart|reporneste|reincarca/i,
             status: /status|stare|cum merge|info/i,
             scale: /scale|scalare|instanțe|replici/i
@@ -98,6 +99,24 @@ class CommandParser {
                 action: 'create',
                 confirmation: true,
                 description: 'Creare/Modificare bază de date'
+            };
+        }
+
+        // GitHub
+        if (this.patterns.github.test(message)) {
+            const action = message.includes('push') ? 'push' : 
+                          message.includes('init') || message.includes('creaz') ? 'init' :
+                          message.includes('pr') || message.includes('pull request') ? 'pr' :
+                          message.includes('status') ? 'status' : 'push';
+            
+            return {
+                type: 'github',
+                action: action,
+                confirmation: action !== 'status',
+                description: action === 'push' ? 'Push cod în GitHub' :
+                           action === 'init' ? 'Initializează repo GitHub' :
+                           action === 'pr' ? 'Crează Pull Request' :
+                           'Status GitHub Actions'
             };
         }
 
