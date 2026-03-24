@@ -277,32 +277,26 @@ Fii concis și util.`
             }
         ];
 
+        let response;
         try {
-            const response = await callKimiFast(messages, 0.7);
+            console.log('🤖 Apelez callKimiFast...');
+            response = await callKimiFast(messages, 0.7);
+            console.log('✅ Răspuns primit:', response.content?.substring(0, 100));
             
             // Salvăm răspunsul
             await this.saveMessage(projectId, 'assistant', response.content);
             
-            // Curățăm HTML invalid
-            let cleanResponse = response.content
-                .replace(/</g, '&lt;')
-                .replace(/>/g, '&gt;')
-                .replace(/&lt;(b|i|code|pre)&gt;/g, '<$1>')
-                .replace(/&lt;\/(b|i|code|pre)&gt;/g, '</$1>');
+            // Trimitem răspunsul (fără HTML complex)
+            await this.bot.telegram.sendMessage(chatId, response.content);
+            console.log('✅ Mesaj trimis în Telegram');
             
-            // Trimitem răspunsul
-            await this.bot.telegram.sendMessage(chatId, cleanResponse, {
-                parse_mode: 'HTML'
-            });
         } catch (error) {
             await logger.error('Eroare conversație generală', { projectId, error: error.message });
-            console.error('Stack eroare:', error.stack);
-            // Trimitem fără HTML parsing dacă e eroare
-            try {
-                await this.bot.telegram.sendMessage(chatId, response?.content || '❌ Eroare la procesare.');
-            } catch (e) {
-                await this.bot.telegram.sendMessage(chatId, '❌ Eroare la procesare. Încearcă din nou.');
-            }
+            console.error('❌ Stack eroare:', error.stack);
+            // Trimitem fallback
+            await this.bot.telegram.sendMessage(chatId, 
+                response?.content || '❌ Eroare la procesare. Încearcă din nou.'
+            );
         }
     }
 

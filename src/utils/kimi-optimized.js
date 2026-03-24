@@ -54,8 +54,16 @@ async function callKimi(messages, model = MODELS.FAST, temperature = 0.7, maxRet
                 lastError = error;
                 console.error(`❌ ${currentModel}:`, error.message);
                 
-                if (error.status === 429 || error.status === 404) {
-                    break; // Trecem la următorul model
+                // 429 = rate limit, așteptăm mai mult
+                if (error.status === 429) {
+                    const delay = (attempt + 1) * 5000; // 5s, 10s, 15s
+                    console.log(`⏳ Rate limit, aștept ${delay}ms...`);
+                    await new Promise(r => setTimeout(r, delay));
+                    continue; // Reîncercăm același model
+                }
+                
+                if (error.status === 404) {
+                    break; // Model indisponibil, trecem la următorul
                 }
                 
                 if (attempt < maxRetries) {
@@ -65,13 +73,15 @@ async function callKimi(messages, model = MODELS.FAST, temperature = 0.7, maxRet
         }
     }
     
-    // Fallback - nu blocăm userul
+    // Fallback final - informăm userul clar
+    console.error('❌ Toate modelele au eșuat după multiple încercări');
     return {
-        content: 'Serviciul AI este ocupat. Încearcă din nou în câteva secunde.',
+        content: '⏳ <b>API Kimi este supraîncărcat</b>\n\nToate modelele sunt ocupate momentan. Te rog să:\n1. Aștepți 30 de secunde\n2. Încerci din nou\n\nDacă problema persistă, încearcă mai târziu.',
         usage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 },
         cost: 0,
         role: 'assistant',
         model: 'fallback',
+        isError: true,
         error: lastError?.message
     };
 }
