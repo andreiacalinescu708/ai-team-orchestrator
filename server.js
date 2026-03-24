@@ -194,6 +194,9 @@ bot.on('text', async (ctx) => {
             // Răspuns la întrebare
             await manager.handleDiscoveryResponse(session.chatId, session.projectId, text);
         }
+    } else {
+        // Conversație generală despre proiect
+        await manager.handleGeneralChat(session.chatId, session.projectId, text);
     }
     } catch (error) {
         console.error('❌ Eroare procesare mesaj:', error);

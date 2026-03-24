@@ -158,8 +158,9 @@ Când ai suficiente informații, răspunde cu [DISCOVERY_COMPLETE] și sumarul.`
                 );
             }
         } catch (error) {
-            await logger.error('Eroare verificare skills', { projectId, error: error.message, stack: error.stack });
-            console.error('❌ Detalii eroare skills:', error);
+            await logger.error('Eroare verificare skills', { projectId, error: error.message });
+            console.error('❌ Detalii eroare skills:', error.message);
+            console.error('Stack:', error.stack);
             // Continuăm chiar dacă verificarea eșuează
             await this.bot.telegram.sendMessage(chatId, 
                 `⚠️ Nu am putut verifica skills, dar continuăm cu execuția.`,
@@ -252,6 +253,56 @@ Ce dorești să faci?`;
             }
         } catch (err) {
             await this.bot.telegram.sendMessage(chatId, `❌ Eroare: ${err.message}`);
+        }
+    }
+
+    /**
+     * Handler pentru conversație generală după ce proiectul e generat
+     */
+    async handleGeneralChat(chatId, projectId, text) {
+        await logger.info('Conversație generală', { projectId, text: text.substring(0, 50) });
+
+        // Obținem info despre proiect
+        const project = await query('SELECT * FROM projects WHERE id = $1', [projectId]);
+        if (!project.rows[0]) {
+            return this.bot.telegram.sendMessage(chatId, '❌ Proiect negăsit.');
+        }
+
+        const p = project.rows[0];
+        
+        // Salvăm mesajul userului
+        await this.saveMessage(projectId, 'user', text);
+
+        // Construim context pentru AI
+        const messages = [
+            {
+                role: 'system',
+                content: `Ești un asistent AI care ajută cu proiectul: "${p.name || 'Proiect'}"
+Status: ${p.status}
+Tehnologii: ${JSON.stringify(p.discovery_data?.techStack || {})}
+
+Răspunde la întrebări despre proiect, sugerează îmbunătățiri, sau explică codul generat.
+Fii concis și util.`
+            },
+            {
+                role: 'user',
+                content: text
+            }
+        ];
+
+        try {
+            const response = await callKimiFast(messages, 0.7);
+            
+            // Salvăm răspunsul
+            await this.saveMessage(projectId, 'assistant', response.content);
+            
+            // Trimitem răspunsul
+            await this.bot.telegram.sendMessage(chatId, response.content, {
+                parse_mode: 'HTML'
+            });
+        } catch (error) {
+            await logger.error('Eroare conversație generală', { projectId, error: error.message });
+            await this.bot.telegram.sendMessage(chatId, '❌ Eroare la procesare. Încearcă din nou.');
         }
     }
 
