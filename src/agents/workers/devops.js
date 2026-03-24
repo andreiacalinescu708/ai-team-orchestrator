@@ -17,7 +17,7 @@ class DevOpsWorker {
     }
 
     async execute(projectId, discoveryData, architecture) {
-        await this.sendProgress(projectId, '🚀 DevOps configurează deployment-ul...');
+        await this.sendProgress(projectId, '🚀 <b>DevOps</b> configurează deployment...');
         await logger.info('Începe execuție DevOpsWorker', { projectId });
 
         const projectPath = getProjectPath(projectId);

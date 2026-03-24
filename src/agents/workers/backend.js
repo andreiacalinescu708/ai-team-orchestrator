@@ -17,7 +17,7 @@ class BackendWorker {
     }
 
     async execute(projectId, discoveryData, architecture) {
-        await this.sendProgress(projectId, '⚙️ Backend generează API-ul...');
+        await this.sendProgress(projectId, '⚙️ <b>Backend</b> generează API-ul...');
         await logger.info('Începe execuție BackendWorker', { projectId });
 
         const projectPath = getProjectPath(projectId);

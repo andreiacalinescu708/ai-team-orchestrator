@@ -17,7 +17,7 @@ class ArchitectWorker {
     }
 
     async execute(projectId, discoveryData) {
-        await this.sendProgress(projectId, '🏗️ Architect proiectează arhitectura...');
+        await this.sendProgress(projectId, '🏗️ <b>Architect</b> proiectează structura...');
         await logger.info('Începe execuție ArchitectWorker', { projectId });
 
         const projectPath = getProjectPath(projectId);

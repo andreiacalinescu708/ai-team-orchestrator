@@ -50,7 +50,10 @@ class PlanExecutor {
         const startTime = Date.now();
         
         await logger.info('Începe execuție plan', { projectId });
-        await this.sendProgress(projectId, '🚀 Pornim execuția planului...');
+        await this.sendProgress(projectId, '🚀 <b>Pornim execuția!</b>\nGenerăm codul complet...');
+        
+        // ETA estimat
+        await this.sendProgress(projectId, '⏱️ <i>ETA: ~3-5 minute</i>');
 
         // Update status în DB
         await query(

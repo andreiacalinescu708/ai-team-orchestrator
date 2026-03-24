@@ -17,7 +17,7 @@ class FrontendWorker {
     }
 
     async execute(projectId, discoveryData, architecture) {
-        await this.sendProgress(projectId, '🎨 Frontend generează aplicația React...');
+        await this.sendProgress(projectId, '🎨 <b>Frontend</b> generează React...');
         await logger.info('Începe execuție FrontendWorker', { projectId });
 
         const projectPath = getProjectPath(projectId);
