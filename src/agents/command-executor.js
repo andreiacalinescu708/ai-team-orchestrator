@@ -47,6 +47,17 @@ class CommandExecutor {
     async deploy(chatId, projectId, intent) {
         await this.bot.telegram.sendMessage(chatId, '🚀 <b>Deploy în curs...</b>', { parse_mode: 'HTML' });
 
+        // Verificăm dacă suntem în mediu potrivit
+        const fs = require('fs');
+        const projectPath = `./projects/project-${projectId}`;
+        
+        if (!fs.existsSync(projectPath)) {
+            return {
+                success: false,
+                message: `❌ Proiectul nu există local.`
+            };
+        }
+
         try {
             // Verificăm dacă avem token Railway
             if (!this.railwayToken) {
@@ -56,10 +67,21 @@ class CommandExecutor {
                 };
             }
 
+            // Verificăm dacă railway CLI e disponibil
+            try {
+                await execAsync('railway --version');
+            } catch (e) {
+                return {
+                    success: false,
+                    message: `❌ <b>Railway CLI nu e instalat</b>\n\nInstalează cu: <code>npm install -g @railway/cli</code>`
+                };
+            }
+
             // Comandă deploy
             const { stdout, stderr } = await execAsync('railway up', {
-                cwd: `./projects/project-${projectId}`,
-                env: { ...process.env, RAILWAY_TOKEN: this.railwayToken }
+                cwd: projectPath,
+                env: { ...process.env, RAILWAY_TOKEN: this.railwayToken },
+                timeout: 120000
             });
 
             await logger.info('Deploy executat', { projectId, output: stdout });
@@ -163,6 +185,35 @@ class CommandExecutor {
         await this.bot.telegram.sendMessage(chatId, '🧪 <b>Rulez testele...</b>', { parse_mode: 'HTML' });
 
         try {
+            // Verificăm dacă există teste
+            const fs = require('fs');
+            const testPath = `./projects/project-${projectId}/backend/package.json`;
+            
+            if (!fs.existsSync(testPath)) {
+                return {
+                    success: false,
+                    message: `❌ Nu am găsit backend-ul proiectului.`
+                };
+            }
+            
+            const packageJson = JSON.parse(fs.readFileSync(testPath, 'utf8'));
+            if (!packageJson.scripts || !packageJson.scripts.test) {
+                return {
+                    success: false,
+                    message: `ℹ️ <b>Nu există teste configurate</b>\n\nProiectul nu are scriptul "test" în package.json.`
+                };
+            }
+
+            // Verificăm dacă npm e disponibil
+            try {
+                await execAsync('npm --version');
+            } catch (e) {
+                return {
+                    success: false,
+                    message: `❌ <b>NPM nu e disponibil</b>\n\nNu pot rula testele în mediul curent.`
+                };
+            }
+
             const { stdout, stderr } = await execAsync('npm test', {
                 cwd: `./projects/project-${projectId}/backend`,
                 timeout: 60000
