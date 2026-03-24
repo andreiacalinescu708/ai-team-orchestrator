@@ -54,10 +54,13 @@ async function callKimi(messages, model = MODELS.THINKING, temperature = 0.3, ma
             try {
                 console.log(`🤖 Apel API cu model: ${currentModel} (attempt ${attempt + 1})`);
                 
+                // k2.5 acceptă doar temperature=1
+                const effectiveTemp = currentModel.includes('k2.5') ? 1 : temperature;
+                
                 const response = await kimi.chat.completions.create({
                     model: currentModel,
                     messages: messages,
-                    temperature: temperature,
+                    temperature: effectiveTemp,
                     max_tokens: 4096,
                 });
 
