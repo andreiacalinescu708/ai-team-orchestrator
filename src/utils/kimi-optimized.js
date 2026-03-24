@@ -4,67 +4,90 @@ require('dotenv').config();
 const kimi = new OpenAI({
     apiKey: process.env.KIMI_API_KEY,
     baseURL: process.env.KIMI_BASE_URL || 'https://api.moonshot.cn/v1',
-    timeout: 60000,
+    timeout: 120000, // 120s pentru thinking
     maxRetries: 0,
 });
 
-// Modele disponibile Kimi (Moonshot AI)
+// Modele disponibile Kimi (Moonshot AI) - conform documentație oficială
 const MODELS = {
-    // Modele noi K2.5 (priority)
-    FAST: ['kimi-k2.5', 'kimi-k2-5', 'moonshot-v1-32k', 'moonshot-v1-8k'],
+    // Model principal k2.5
+    FAST: 'kimi-k2.5',
     
-    // Modele pentru generare cod - K2.5 thinking
-    THINKING: ['kimi-k2.5-thinking', 'kimi-k2-5-thinking', 'moonshot-v1-32k', 'moonshot-v1-8k'],
+    // Pentru generare cod (k2.5 cu thinking activat by default)
+    THINKING: 'kimi-k2.5',
     
-    // Modele cu context lung
-    LONG: ['kimi-k2.5-long', 'moonshot-v1-128k', 'moonshot-v1-32k']
+    // Fallback dacă k2.5 nu e disponibil
+    FALLBACK: 'moonshot-v1-32k'
 };
+
+// Delay între request-uri pentru rate limiting
+let lastRequestTime = 0;
+const MIN_DELAY_MS = 1000; // Minim 1s între request-uri
+
+/**
+ * Așteaptă dacă e necesar pentru rate limiting
+ */
+async function rateLimitDelay() {
+    const now = Date.now();
+    const timeSinceLastRequest = now - lastRequestTime;
+    
+    if (timeSinceLastRequest < MIN_DELAY_MS) {
+        const waitTime = MIN_DELAY_MS - timeSinceLastRequest;
+        console.log(`⏱️ Rate limiting: aștept ${waitTime}ms...`);
+        await new Promise(resolve => setTimeout(resolve, waitTime));
+    }
+    
+    lastRequestTime = Date.now();
+}
 
 /**
  * Wrapper cu tracking cost și optimizări
  */
-async function callKimi(messages, modelList = MODELS.THINKING, temperature = 0.3, maxRetries = 2) {
-    const models = Array.isArray(modelList) ? modelList : [modelList];
+async function callKimi(messages, model = MODELS.THINKING, temperature = 0.3, maxRetries = 3) {
+    await rateLimitDelay();
     
+    const modelsToTry = [model, MODELS.FALLBACK];
     let lastError;
     
-    for (const model of models) {
+    for (const currentModel of modelsToTry) {
         for (let attempt = 0; attempt <= maxRetries; attempt++) {
             try {
-                console.log(`🤖 Apel API cu model: ${model} (attempt ${attempt + 1})`);
+                console.log(`🤖 Apel API cu model: ${currentModel} (attempt ${attempt + 1})`);
                 
                 const response = await kimi.chat.completions.create({
-                    model: model,
+                    model: currentModel,
                     messages: messages,
                     temperature: temperature,
+                    max_tokens: 4096,
                 });
 
                 const inputTokens = response.usage?.prompt_tokens || 0;
                 const outputTokens = response.usage?.completion_tokens || 0;
                 const cost = (inputTokens * 0.60 + outputTokens * 2.50) / 1000000;
 
-                console.log(`✅ Succes cu model: ${model}`);
+                console.log(`✅ Succes cu model: ${currentModel}, tokens: ${inputTokens}+${outputTokens}`);
                 
                 return {
                     content: response.choices[0].message.content,
                     usage: response.usage,
                     cost: cost,
                     role: response.choices[0].message.role,
-                    model: model
+                    model: currentModel
                 };
                 
             } catch (error) {
                 lastError = error;
-                console.error(`❌ Eroare ${model} (attempt ${attempt + 1}/${maxRetries + 1}):`, error.message);
+                console.error(`❌ Eroare ${currentModel} (attempt ${attempt + 1}/${maxRetries + 1}):`, error.message);
                 
-                // 404 sau 429 - trecem la următorul model
-                if (error.status === 404 || error.status === 429 || error.error?.type === 'resource_not_found_error') {
-                    console.log(`⏭️ Model ${model} indisponibil/supraîncărcat, încerc alt model...`);
-                    break;
+                // Rate limit (429) sau model indisponibil - trecem la următorul model
+                if (error.status === 429 || error.status === 404) {
+                    console.log(`⏭️ Model ${currentModel} supraîncărcat/indisponibil (${error.status}), încerc fallback...`);
+                    break; // Ieșim din loop-ul de retry și trecem la următorul model
                 }
                 
+                // Alte erori - retry cu backoff crescut
                 if (attempt < maxRetries) {
-                    const delay = Math.pow(2, attempt) * 3000; // 3s, 6s backoff
+                    const delay = (attempt + 1) * 5000; // 5s, 10s, 15s
                     console.log(`🔄 Retry în ${delay}ms...`);
                     await new Promise(resolve => setTimeout(resolve, delay));
                 }
@@ -72,15 +95,26 @@ async function callKimi(messages, modelList = MODELS.THINKING, temperature = 0.3
         }
     }
     
-    throw new Error(`Toate modelele au eșuat. Ultima eroare: ${lastError.message}`);
+    // Toate modelele au eșuat - returnăm un răspuns de fallback pentru a nu bloca userul
+    console.error('❌ Toate modelele au eșuat, returnez fallback');
+    
+    // Pentru conversații simple, returnăm un răspuns generic
+    return {
+        content: 'Îmi pare rău, serviciul AI este momentan supraîncărcat. Te rog să încerci din nou în câteva secunde.',
+        usage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 },
+        cost: 0,
+        role: 'assistant',
+        model: 'fallback',
+        error: lastError.message
+    };
 }
 
 async function callKimiFast(messages, temperature = 0.5) {
-    return callKimi(messages, MODELS.FAST, temperature, 1);
+    return callKimi(messages, MODELS.FAST, temperature, 2);
 }
 
 async function callKimiThinking(messages, temperature = 0.3) {
-    return callKimi(messages, MODELS.THINKING, temperature, 2);
+    return callKimi(messages, MODELS.THINKING, temperature, 3);
 }
 
 module.exports = {
