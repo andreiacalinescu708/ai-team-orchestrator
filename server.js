@@ -164,10 +164,13 @@ bot.on('text', async (ctx) => {
     
     // Dacă nu există sesiune, creăm una nouă
     if (!session) {
+        // Extragem numele proiectului din prima frază (primele 50 caractere)
+        const projectName = text.length > 50 ? text.substring(0, 50) + '...' : text;
+        
         // Creăm proiect nou în DB
         const result = await query(
             'INSERT INTO projects (user_id, name, status) VALUES ($1, $2, $3) RETURNING id',
-            [userId, 'New Project', 'discovering']
+            [userId, projectName, 'discovering']
         );
         
         const projectId = result.rows[0].id;
