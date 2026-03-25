@@ -603,18 +603,41 @@ bot.action(/start_execution_(.+)/, async (ctx) => {
 
 bot.action(/view_files_(.+)/, async (ctx) => {
     const projectId = ctx.match[1];
+    const userId = ctx.from.id;
     await ctx.answerCbQuery();
+    
+    // Validare securitate
+    const { SecurityService } = require('./src/services/securityService');
+    const security = new SecurityService();
+    
+    if (!security.validateProjectId(projectId)) {
+        return ctx.reply('❌ ID proiect invalid.');
+    }
+    
+    // Verificare acces
+    const { query } = require('./src/utils/db');
+    const hasAccess = await security.validateUserAccess(userId, projectId, { query });
+    if (!hasAccess) {
+        security.logSecurityEvent(userId, 'UNAUTHORIZED_FILE_ACCESS', { projectId }, 'critical');
+        return ctx.reply('❌ Nu ai acces la acest proiect.');
+    }
+    
     await manager.listProjectFiles(ctx.chat.id, projectId);
 });
 
 bot.action(/download_(.+)/, async (ctx) => {
     const projectId = ctx.match[1];
+    const userId = ctx.from.id;
     await ctx.answerCbQuery('📦 Preparăm fișierele...');
     
     try {
         const { DownloadExecutor } = require('./src/agents/download-executor');
         const downloader = new DownloadExecutor(bot);
-        await downloader.sendProjectAsZip(ctx.chat.id, projectId);
+        const result = await downloader.sendProjectAsZip(ctx.chat.id, projectId, userId);
+        
+        if (!result.success) {
+            await ctx.reply(result.message);
+        }
     } catch (err) {
         console.error('Eroare download:', err);
         await ctx.reply('❌ Eroare la pregătirea fișierelor.');
@@ -793,9 +816,25 @@ bot.action(/deploy_vercel_(.+)/, async (ctx) => {
     await ctx.answerCbQuery('🚀 Se face deploy pe Vercel...');
     
     try {
+        // Validare securitate
+        const { SecurityService } = require('./src/services/securityService');
+        const security = new SecurityService();
+        
+        if (!security.validateProjectId(projectId)) {
+            return ctx.reply('❌ ID proiect invalid.');
+        }
+        
+        // Verificare acces
+        const { query } = require('./src/utils/db');
+        const hasAccess = await security.validateUserAccess(userId, projectId, { query });
+        if (!hasAccess) {
+            security.logSecurityEvent(userId, 'UNAUTHORIZED_DEPLOY', { projectId }, 'critical');
+            return ctx.reply('❌ Nu ai acces la acest proiect.');
+        }
+        
         const { ManagerAgent } = require('./src/agents/manager');
         const manager = new ManagerAgent(bot);
-        await manager.deployToVercel(ctx.chat.id, projectId);
+        await manager.deployToVercel(ctx.chat.id, projectId, userId);
     } catch (err) {
         console.error('Eroare deploy Vercel:', err);
         ctx.reply('❌ Eroare la deploy. Încearcă din nou.');

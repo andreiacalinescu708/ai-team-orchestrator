@@ -3,9 +3,11 @@ const { promisify } = require('util');
 const fs = require('fs').promises;
 const path = require('path');
 const { Logger } = require('../utils/logger');
+const { SecurityService } = require('./securityService');
 
 const execAsync = promisify(exec);
 const logger = new Logger('VercelService');
+const security = new SecurityService();
 
 /**
  * Service pentru deploy pe Vercel
@@ -22,7 +24,26 @@ class VercelService {
      * @param {string} projectName - Numele proiectului
      * @returns {Promise<{success: boolean, url?: string, message: string}>}
      */
-    async deploy(projectId, projectPath, projectName = 'ai-project') {
+    async deploy(projectId, projectPath, userId, projectName = 'ai-project') {
+        // Validare securitate
+        if (!security.validateProjectId(projectId)) {
+            security.logSecurityEvent(userId, 'INVALID_PROJECT_ID_DEPLOY', { projectId }, 'warning');
+            return {
+                success: false,
+                message: '❌ ID proiect invalid.'
+            };
+        }
+
+        // Validare path
+        const validPath = security.validatePath('./projects', `project-${projectId}`);
+        if (!validPath) {
+            security.logSecurityEvent(userId, 'PATH_TRAVERSAL_DEPLOY', { projectId }, 'critical');
+            return {
+                success: false,
+                message: '❌ Cale invalidă.'
+            };
+        }
+
         try {
             // Verificăm dacă există deja un deploy activ
             if (this.activeDeploys.has(projectId)) {

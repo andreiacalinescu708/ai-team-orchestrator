@@ -177,6 +177,7 @@ Când ai suficiente informații, răspunde cu [DISCOVERY_COMPLETE] și sumarul.`
         }
 
         const discoveryData = project.rows[0].discovery_data || {};
+        const userId = project.rows[0].user_id;
 
         // Pornim execuția în background
         await this.bot.telegram.sendMessage(chatId, '🚀 Execuție pornită! Voi trimite update-uri pe parcurs.');
@@ -192,7 +193,7 @@ Când ai suficiente informații, răspunde cu [DISCOVERY_COMPLETE] și sumarul.`
                 // Deploy automat preview pentru frontend
                 if (result.files.some(f => f.includes('frontend') || f.includes('index.html'))) {
                     // Deploy automat pe Vercel
-                await this.deployToVercel(chatId, projectId);
+                    await this.deployToVercel(chatId, projectId, userId);
                 }
             })
             .catch(error => {
@@ -229,12 +230,12 @@ Ce dorești să faci?`;
     /**
      * Deploy automat pe Vercel
      */
-    async deployToVercel(chatId, projectId) {
+    async deployToVercel(chatId, projectId, userId) {
         try {
             await this.bot.telegram.sendMessage(chatId, '🚀 <i>Deploying pe Vercel...</i>', { parse_mode: 'HTML' });
             
             const projectPath = `./projects/project-${projectId}`;
-            const result = await this.vercelService.deploy(projectId, projectPath);
+            const result = await this.vercelService.deploy(projectId, projectPath, userId);
             
             if (result.success) {
                 const message = result.isExisting 

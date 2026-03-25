@@ -3,8 +3,10 @@ const fs = require('fs');
 const path = require('path');
 const { Logger } = require('../utils/logger');
 const { listProjectFiles } = require('../utils/project');
+const { SecurityService } = require('../services/securityService');
 
 const logger = new Logger('DownloadExecutor');
+const security = new SecurityService();
 
 /**
  * DownloadExecutor - Creează și trimite fișierele ca ZIP
@@ -17,11 +19,41 @@ class DownloadExecutor {
     /**
      * Creează ZIP și trimite în Telegram
      */
-    async sendProjectAsZip(chatId, projectId) {
+    async sendProjectAsZip(chatId, projectId, userId) {
+        // Validare securitate
+        if (!security.validateProjectId(projectId)) {
+            security.logSecurityEvent(userId, 'INVALID_PROJECT_ID', { projectId }, 'warning');
+            return {
+                success: false,
+                message: '❌ ID proiect invalid.'
+            };
+        }
+
+        // Validare acces user
+        const { query } = require('../utils/db');
+        const hasAccess = await security.validateUserAccess(userId, projectId, { query });
+        if (!hasAccess) {
+            security.logSecurityEvent(userId, 'UNAUTHORIZED_ACCESS', { projectId }, 'critical');
+            return {
+                success: false,
+                message: '❌ Nu ai acces la acest proiect.'
+            };
+        }
+
         console.log(`📦 Creare ZIP pentru proiect ${projectId}`);
         
         const projectPath = `./projects/project-${projectId}`;
         const zipPath = `./temp/project-${projectId}.zip`;
+
+        // Validare path
+        const validPath = security.validatePath('./projects', `project-${projectId}`);
+        if (!validPath) {
+            security.logSecurityEvent(userId, 'PATH_TRAVERSAL_ATTEMPT', { projectId }, 'critical');
+            return {
+                success: false,
+                message: '❌ Cale invalidă.'
+            };
+        }
 
         // Verificăm dacă există proiectul
         if (!fs.existsSync(projectPath)) {
