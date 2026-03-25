@@ -3,6 +3,7 @@ const { query } = require('../utils/db');
 const { PlanExecutor } = require('../executor');
 const { Logger } = require('../utils/logger');
 const { SkillManagerAgent } = require('./skill-manager');
+const { DeployService } = require('../services/deployService');
 
 const logger = new Logger('ManagerAgent');
 
@@ -13,6 +14,7 @@ const logger = new Logger('ManagerAgent');
 class ManagerAgent {
     constructor(bot) {
         this.bot = bot;
+        this.deployService = new DeployService();
     }
 
     /**
@@ -184,8 +186,13 @@ Când ai suficiente informații, răspunde cu [DISCOVERY_COMPLETE] și sumarul.`
         
         // Executăm asincron pentru a nu bloca răspunsul
         executor.executePlan(projectId, discoveryData)
-            .then(result => {
-                this.sendCompletionMessage(chatId, projectId, result);
+            .then(async (result) => {
+                await this.sendCompletionMessage(chatId, projectId, result);
+                
+                // Deploy automat preview pentru frontend
+                if (result.files.some(f => f.includes('frontend') || f.includes('index.html'))) {
+                    await this.deployPreview(chatId, projectId);
+                }
             })
             .catch(error => {
                 console.error('Eroare execuție:', error);
@@ -211,10 +218,50 @@ Ce dorești să faci?`;
                 inline_keyboard: [
                     [{text: '📁 Vezi fișierele', callback_data: `view_files_${projectId}`}],
                     [{text: '⬇️ Download ZIP', callback_data: `download_${projectId}`}],
+                    [{text: '🌐 Deploy Preview', callback_data: `deploy_preview_${projectId}`}],
                     [{text: '🔄 Generează alt proiect', callback_data: 'new_project'}]
                 ]
             }
         });
+    }
+
+    /**
+     * Deploy preview automat
+     */
+    async deployPreview(chatId, projectId) {
+        try {
+            await this.bot.telegram.sendMessage(chatId, '🌐 <i>Deploying preview...</i>', { parse_mode: 'HTML' });
+            
+            const projectPath = `./projects/project-${projectId}`;
+            const result = await this.deployService.deployPreview(projectId, projectPath, 5); // 5 ore
+            
+            if (result.success) {
+                const expiresAt = result.expiresAt.toLocaleString('ro-RO');
+                await this.bot.telegram.sendMessage(chatId, 
+                    `🚀 <b>Site-ul tău e live!</b>\n\n` +
+                    `🔗 <a href="${result.url}">${result.url}</a>\n\n` +
+                    `⏰ Expiră: ${expiresAt}\n` +
+                    `⏱️ Durată: 5 ore\n\n` +
+                    `Poți prelungi durata din meniul proiectului.`,
+                    { 
+                        parse_mode: 'HTML',
+                        reply_markup: {
+                            inline_keyboard: [
+                                [{text: '🔗 Deschide site-ul', url: result.url}],
+                                [{text: '⏰ Prelungește cu 5h', callback_data: `extend_deploy_${projectId}`}]
+                            ]
+                        }
+                    }
+                );
+            } else {
+                await this.bot.telegram.sendMessage(chatId, 
+                    `⚠️ <b>Deploy preview nereușit</b>\n\n${result.message}`,
+                    { parse_mode: 'HTML' }
+                );
+            }
+        } catch (error) {
+            await logger.error('Eroare deploy preview', { projectId, error: error.message });
+        }
     }
 
     /**
