@@ -612,9 +612,11 @@ bot.action(/download_(.+)/, async (ctx) => {
     await ctx.answerCbQuery('📦 Preparăm fișierele...');
     
     try {
-        // TODO: Implementare ZIP download
-        await ctx.reply('⬇️ Funcționalitatea de download va fi disponibilă curând!\n\nPoți accesa direct fișierele în folderul `projects/`.');
+        const { DownloadExecutor } = require('./src/agents/download-executor');
+        const downloader = new DownloadExecutor(bot);
+        await downloader.sendProjectAsZip(ctx.chat.id, projectId);
     } catch (err) {
+        console.error('Eroare download:', err);
         await ctx.reply('❌ Eroare la pregătirea fișierelor.');
     }
 });
