@@ -783,42 +783,20 @@ bot.action(/select_project_(.+)/, async (ctx) => {
     }
 });
 
-// Handler pentru deploy preview
-bot.action(/deploy_preview_(.+)/, async (ctx) => {
+// Handler pentru deploy pe Vercel
+bot.action(/deploy_vercel_(.+)/, async (ctx) => {
     const projectId = ctx.match[1];
     const userId = ctx.from.id;
     
-    await ctx.answerCbQuery('🌐 Se face deploy...');
+    await ctx.answerCbQuery('🚀 Se face deploy pe Vercel...');
     
     try {
         const { ManagerAgent } = require('./src/agents/manager');
         const manager = new ManagerAgent(bot);
-        await manager.deployPreview(ctx.chat.id, projectId);
+        await manager.deployToVercel(ctx.chat.id, projectId);
     } catch (err) {
-        console.error('Eroare deploy preview:', err);
+        console.error('Eroare deploy Vercel:', err);
         ctx.reply('❌ Eroare la deploy. Încearcă din nou.');
-    }
-});
-
-// Handler pentru prelungire deploy
-bot.action(/extend_deploy_(.+)/, async (ctx) => {
-    const projectId = ctx.match[1];
-    
-    await ctx.answerCbQuery('⏰ Prelungesc durata...');
-    
-    try {
-        const { ManagerAgent } = require('./src/agents/manager');
-        const manager = new ManagerAgent(bot);
-        const result = await manager.deployService.extendDuration(projectId, 5);
-        
-        if (result.success) {
-            await ctx.reply(`✅ Durata prelungită!\n\nNoua expirare: ${result.newExpiresAt.toLocaleString('ro-RO')}`);
-        } else {
-            await ctx.reply(`⚠️ ${result.message}`);
-        }
-    } catch (err) {
-        console.error('Eroare prelungire deploy:', err);
-        ctx.reply('❌ Nu am putut prelungi durata.');
     }
 });
 

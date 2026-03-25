@@ -3,7 +3,7 @@ const { query } = require('../utils/db');
 const { PlanExecutor } = require('../executor');
 const { Logger } = require('../utils/logger');
 const { SkillManagerAgent } = require('./skill-manager');
-const { DeployService } = require('../services/deployService');
+const { VercelService } = require('../services/vercelService');
 
 const logger = new Logger('ManagerAgent');
 
@@ -14,7 +14,7 @@ const logger = new Logger('ManagerAgent');
 class ManagerAgent {
     constructor(bot) {
         this.bot = bot;
-        this.deployService = new DeployService();
+        this.vercelService = new VercelService();
     }
 
     /**
@@ -191,7 +191,8 @@ Când ai suficiente informații, răspunde cu [DISCOVERY_COMPLETE] și sumarul.`
                 
                 // Deploy automat preview pentru frontend
                 if (result.files.some(f => f.includes('frontend') || f.includes('index.html'))) {
-                    await this.deployPreview(chatId, projectId);
+                    // Deploy automat pe Vercel
+                await this.deployToVercel(chatId, projectId);
                 }
             })
             .catch(error => {
@@ -218,7 +219,7 @@ Ce dorești să faci?`;
                 inline_keyboard: [
                     [{text: '📁 Vezi fișierele', callback_data: `view_files_${projectId}`}],
                     [{text: '⬇️ Download ZIP', callback_data: `download_${projectId}`}],
-                    [{text: '🌐 Deploy Preview', callback_data: `deploy_preview_${projectId}`}],
+                    [{text: '🌐 Deploy pe Vercel', callback_data: `deploy_vercel_${projectId}`}],
                     [{text: '🔄 Generează alt proiect', callback_data: 'new_project'}]
                 ]
             }
@@ -226,41 +227,43 @@ Ce dorești să faci?`;
     }
 
     /**
-     * Deploy preview automat
+     * Deploy automat pe Vercel
      */
-    async deployPreview(chatId, projectId) {
+    async deployToVercel(chatId, projectId) {
         try {
-            await this.bot.telegram.sendMessage(chatId, '🌐 <i>Deploying preview...</i>', { parse_mode: 'HTML' });
+            await this.bot.telegram.sendMessage(chatId, '🚀 <i>Deploying pe Vercel...</i>', { parse_mode: 'HTML' });
             
             const projectPath = `./projects/project-${projectId}`;
-            const result = await this.deployService.deployPreview(projectId, projectPath, 5); // 5 ore
+            const result = await this.vercelService.deploy(projectId, projectPath);
             
             if (result.success) {
-                const expiresAt = result.expiresAt.toLocaleString('ro-RO');
+                const message = result.isExisting 
+                    ? `🚀 <b>Site-ul este deja live!</b>`
+                    : `🚀 <b>Site-ul tău e live pe Vercel!</b>`;
+                    
                 await this.bot.telegram.sendMessage(chatId, 
-                    `🚀 <b>Site-ul tău e live!</b>\n\n` +
+                    `${message}\n\n` +
                     `🔗 <a href="${result.url}">${result.url}</a>\n\n` +
-                    `⏰ Expiră: ${expiresAt}\n` +
-                    `⏱️ Durată: 5 ore\n\n` +
-                    `Poți prelungi durata din meniul proiectului.`,
+                    `✅ Deploy permanent\n` +
+                    `⚡ Viteza CDN global`,
                     { 
                         parse_mode: 'HTML',
                         reply_markup: {
                             inline_keyboard: [
                                 [{text: '🔗 Deschide site-ul', url: result.url}],
-                                [{text: '⏰ Prelungește cu 5h', callback_data: `extend_deploy_${projectId}`}]
+                                [{text: '📁 Vezi fișierele', callback_data: `view_files_${projectId}`}]
                             ]
                         }
                     }
                 );
             } else {
                 await this.bot.telegram.sendMessage(chatId, 
-                    `⚠️ <b>Deploy preview nereușit</b>\n\n${result.message}`,
+                    `⚠️ <b>Deploy nereușit</b>\n\n${result.message}`,
                     { parse_mode: 'HTML' }
                 );
             }
         } catch (error) {
-            await logger.error('Eroare deploy preview', { projectId, error: error.message });
+            await logger.error('Eroare deploy Vercel', { projectId, error: error.message });
         }
     }
 
