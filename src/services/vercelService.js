@@ -1,130 +1,196 @@
-const { exec } = require('child_process');
-const { promisify } = require('util');
 const fs = require('fs').promises;
 const path = require('path');
 const { Logger } = require('../utils/logger');
 const { SecurityService } = require('./securityService');
 
-const execAsync = promisify(exec);
 const logger = new Logger('VercelService');
 const security = new SecurityService();
 
 /**
- * Service pentru deploy pe Vercel
+ * Service pentru deploy pe Vercel folosind API REST
  */
 class VercelService {
     constructor() {
-        this.activeDeploys = new Map(); // projectId -> {url, deploymentId}
+        this.activeDeploys = new Map();
+        this.apiBase = 'https://api.vercel.com';
     }
 
     /**
-     * Deploy site pe Vercel
-     * @param {number} projectId - ID proiect
-     * @param {string} projectPath - Calea către folderul cu site-ul
-     * @param {string} projectName - Numele proiectului
-     * @returns {Promise<{success: boolean, url?: string, message: string}>}
+     * Deploy site pe Vercel via API
      */
     async deploy(projectId, projectPath, userId, projectName = 'ai-project') {
-        // Validare securitate
-        if (!security.validateProjectId(projectId)) {
-            security.logSecurityEvent(userId, 'INVALID_PROJECT_ID_DEPLOY', { projectId }, 'warning');
-            return {
-                success: false,
-                message: '❌ ID proiect invalid.'
-            };
-        }
-
-        // Validare path
-        const validPath = security.validatePath('./projects', `project-${projectId}`);
-        if (!validPath) {
-            security.logSecurityEvent(userId, 'PATH_TRAVERSAL_DEPLOY', { projectId }, 'critical');
-            return {
-                success: false,
-                message: '❌ Cale invalidă.'
-            };
-        }
-
         try {
-            // Verificăm dacă există deja un deploy activ
+            // Validare securitate
+            if (!security.validateProjectId(projectId)) {
+                security.logSecurityEvent(userId, 'INVALID_PROJECT_ID_DEPLOY', { projectId }, 'warning');
+                return { success: false, message: '❌ ID proiect invalid.' };
+            }
+
+            if (!process.env.VERCEL_TOKEN) {
+                return { success: false, message: '❌ VERCEL_TOKEN neconfigurat.' };
+            }
+
+            // Verificăm dacă există deja deploy
             if (this.activeDeploys.has(projectId)) {
                 const existing = this.activeDeploys.get(projectId);
-                return {
-                    success: true,
-                    url: existing.url,
-                    message: `ℹ️ Site-ul e deja live!`,
-                    isExisting: true
-                };
+                return { success: true, url: existing.url, message: 'ℹ️ Site-ul e deja live!', isExisting: true };
             }
 
-            // Verificăm credențialele Vercel
-            if (!process.env.VERCEL_TOKEN) {
-                return {
-                    success: false,
-                    message: '❌ VERCEL_TOKEN neconfigurat. Contactează adminul.'
-                };
-            }
-
-            // Găsim folderul cu build-ul
+            // Găsim build path
             const buildPath = await this.findBuildPath(projectPath);
             if (!buildPath) {
-                return {
-                    success: false,
-                    message: '❌ Nu am găsit fișierele site-ului (index.html)'
-                };
+                return { success: false, message: '❌ Nu am găsit fișierele site-ului.' };
             }
 
-            await logger.info(`Deploying to Vercel for project ${projectId}`, { buildPath });
+            await logger.info(`Deploying to Vercel for project ${projectId}`);
 
-            // Facem deploy cu Vercel CLI
-            const projectSlug = `ai-project-${projectId}`;
+            // Creăm proiectul în Vercel
+            const projectSlug = `ai-project-${projectId}-${Date.now()}`;
+            const createProjectResponse = await this.createProject(projectSlug);
             
-            const env = {
-                ...process.env,
-                VERCEL_TOKEN: process.env.VERCEL_TOKEN
-            };
-
-            // Comanda de deploy
-            const deployCmd = `npx vercel ${buildPath} --token ${process.env.VERCEL_TOKEN} --name ${projectSlug} --yes --prod`;
-            
-            const { stdout, stderr } = await execAsync(deployCmd, { 
-                env,
-                timeout: 120000,
-                cwd: buildPath
-            });
-
-            // Extragem URL-ul din output
-            const urlMatch = stdout.match(/https:\/\/[a-zA-Z0-9.-]+\.vercel\.app/) 
-                          || stderr.match(/https:\/\/[a-zA-Z0-9.-]+\.vercel\.app/);
-            
-            if (!urlMatch) {
-                throw new Error('Nu am putut extrage URL-ul din răspunsul Vercel');
+            if (!createProjectResponse.success) {
+                throw new Error(createProjectResponse.error);
             }
 
-            const url = urlMatch[0];
+            // Facem deploy
+            const deployResponse = await this.createDeployment(buildPath, createProjectResponse.projectId);
+            
+            if (!deployResponse.success) {
+                throw new Error(deployResponse.error);
+            }
 
-            // Salvăm în map
+            const url = `https://${deployResponse.url}`;
+
             this.activeDeploys.set(projectId, {
                 url,
-                projectSlug,
+                projectId: createProjectResponse.projectId,
+                deploymentId: deployResponse.deploymentId,
                 deployedAt: new Date()
             });
 
             await logger.info(`Vercel deploy successful`, { projectId, url });
 
-            return {
-                success: true,
-                url,
-                message: `✅ Site-ul e live pe Vercel!`,
-                isPermanent: true
-            };
+            return { success: true, url, message: '✅ Site-ul e live pe Vercel!', isPermanent: true };
 
         } catch (error) {
             await logger.error('Vercel deploy failed', { projectId, error: error.message });
-            return {
-                success: false,
-                message: `❌ Eroare deploy: ${error.message}`
-            };
+            return { success: false, message: `❌ Eroare deploy: ${error.message}` };
         }
+    }
+
+    /**
+     * Crează proiect în Vercel
+     */
+    async createProject(name) {
+        try {
+            const response = await fetch(`${this.apiBase}/v9/projects`, {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${process.env.VERCEL_TOKEN}`,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    name: name,
+                    framework: null // Static site
+                })
+            });
+
+            const data = await response.json();
+
+            if (!response.ok) {
+                // Dacă proiectul există deja, e ok
+                if (data.error?.code === 'project_already_exists') {
+                    return { success: true, projectId: name };
+                }
+                return { success: false, error: data.error?.message || 'Eroare creare proiect' };
+            }
+
+            return { success: true, projectId: data.id || name };
+        } catch (error) {
+            return { success: false, error: error.message };
+        }
+    }
+
+    /**
+     * Crează deployment
+     */
+    async createDeployment(buildPath, projectId) {
+        try {
+            // Citim toate fișierele
+            const files = await this.collectFiles(buildPath);
+            
+            // Facem upload la fișiere
+            const fileUrls = await this.uploadFiles(files);
+            
+            // Creăm deployment
+            const response = await fetch(`${this.apiBase}/v13/deployments`, {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${process.env.VERCEL_TOKEN}`,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    name: projectId,
+                    project: projectId,
+                    target: 'production',
+                    files: fileUrls
+                })
+            });
+
+            const data = await response.json();
+
+            if (!response.ok) {
+                return { success: false, error: data.error?.message || 'Eroare deployment' };
+            }
+
+            return { 
+                success: true, 
+                url: data.url,
+                deploymentId: data.id 
+            };
+
+        } catch (error) {
+            return { success: false, error: error.message };
+        }
+    }
+
+    /**
+     * Colectează toate fișierele din folder
+     */
+    async collectFiles(dir, basePath = '') {
+        const files = [];
+        const entries = await fs.readdir(dir, { withFileTypes: true });
+
+        for (const entry of entries) {
+            const fullPath = path.join(dir, entry.name);
+            const relativePath = path.join(basePath, entry.name);
+
+            if (entry.isDirectory()) {
+                const subFiles = await this.collectFiles(fullPath, relativePath);
+                files.push(...subFiles);
+            } else {
+                const content = await fs.readFile(fullPath);
+                files.push({
+                    path: relativePath,
+                    content: content.toString('base64'),
+                    encoding: 'base64'
+                });
+            }
+        }
+
+        return files;
+    }
+
+    /**
+     * Upload fișiere la Vercel
+     */
+    async uploadFiles(files) {
+        // Simplificat - returnăm direct fișierele pentru deployment
+        return files.map(f => ({
+            file: f.path,
+            data: f.content,
+            encoding: f.encoding
+        }));
     }
 
     /**
@@ -153,32 +219,10 @@ class VercelService {
         return null;
     }
 
-    /**
-     * Info despre deploy
-     */
     getDeployInfo(projectId) {
         const deploy = this.activeDeploys.get(projectId);
-        if (!deploy) {
-            return { active: false };
-        }
-
-        return {
-            active: true,
-            url: deploy.url,
-            deployedAt: deploy.deployedAt,
-            isPermanent: true
-        };
-    }
-
-    /**
-     * Lista toate deploy-urile active
-     */
-    getAllActiveDeploys() {
-        return Array.from(this.activeDeploys.entries()).map(([projectId, deploy]) => ({
-            projectId,
-            url: deploy.url,
-            deployedAt: deploy.deployedAt
-        }));
+        if (!deploy) return { active: false };
+        return { active: true, url: deploy.url, deployedAt: deploy.deployedAt, isPermanent: true };
     }
 }
 
