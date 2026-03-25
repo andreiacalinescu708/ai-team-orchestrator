@@ -136,18 +136,199 @@ bot.command('projects', async (ctx) => {
 bot.command('help', async (ctx) => {
     await ctx.reply(
         `🤖 <b>AI Team Orchestrator - Comenzi</b>\n\n` +
-        `/start - Începe proiect nou\n` +
-        `/status - Vezi status proiect curent\n` +
-        `/files - Listează fișierele generate\n` +
-        `/reset - Resetează sesiunea\n` +
-        `/help - Acest mesaj\n\n` +
-        `<b>Cum funcționează:</b>\n` +
-        `1. Îmi spui ce aplicație vrei\n` +
-        `2. Îți pun câteva întrebări (discovery)\n` +
-        `3. Generez codul complet\n` +
-        `4. Primești fișierele gata de folosit`,
+        `<b>📝 Proiect:</b>\n` +
+        `/start - Proiect nou\n` +
+        `/projects - Listează proiecte\n` +
+        `/status - Status proiect\n` +
+        `/files - Listează fișiere\n` +
+        `/download - Download ZIP\n\n` +
+        `<b>🔧 GitHub:</b>\n` +
+        `/pr - Creează Pull Request\n` +
+        `/push - Push cod pe GitHub\n\n` +
+        `<b>🚀 Deploy & Ops:</b>\n` +
+        `/deploy - Deploy pe Railway\n` +
+        `/logs - Vezi logs\n` +
+        `/restart - Restart servicii\n` +
+        `/test - Rulează teste\n` +
+        `/env KEY value - Setează variabilă\n\n` +
+        `<b>💬 Comunicare:</b>\n` +
+        `/chat - Mod conversație liberă\n` +
+        `/skill desc - Creează skill nou\n\n` +
+        `/reset - Resetează sesiunea`,
         { parse_mode: 'HTML' }
     );
+});
+
+// ============== COMENZI GITHUB ==============
+
+// /pr - Creează Pull Request
+bot.command('pr', async (ctx) => {
+    const userId = ctx.from.id;
+    const session = userSessions[userId];
+    
+    if (!session) {
+        return ctx.reply('📭 Nu ai un proiect activ. Folosește /projects');
+    }
+    
+    await ctx.reply('📝 Creez Pull Request...');
+    await commander.processMessage(ctx.chat.id, userId, session.projectId, 'crează pull request');
+});
+
+// /push - Push cod pe GitHub
+bot.command('push', async (ctx) => {
+    const userId = ctx.from.id;
+    const session = userSessions[userId];
+    
+    if (!session) {
+        return ctx.reply('📭 Nu ai un proiect activ. Folosește /projects');
+    }
+    
+    await ctx.reply('⬆️ Pushing cod pe GitHub...');
+    await commander.processMessage(ctx.chat.id, userId, session.projectId, 'push cod pe github');
+});
+
+// ============== COMENZI DEPLOY & OPS ==============
+
+// /deploy - Deploy pe Railway
+bot.command('deploy', async (ctx) => {
+    const userId = ctx.from.id;
+    const session = userSessions[userId];
+    
+    if (!session) {
+        return ctx.reply('📭 Nu ai un proiect activ. Folosește /projects');
+    }
+    
+    await ctx.reply('🚀 Pornesc deploy pe Railway...');
+    await commander.processMessage(ctx.chat.id, userId, session.projectId, 'deploy pe railway');
+});
+
+// /logs - Vezi logs
+bot.command('logs', async (ctx) => {
+    const userId = ctx.from.id;
+    const session = userSessions[userId];
+    
+    if (!session) {
+        return ctx.reply('📭 Nu ai un proiect activ. Folosește /projects');
+    }
+    
+    await ctx.reply('📋 Afișez logs backend...');
+    await commander.processMessage(ctx.chat.id, userId, session.projectId, 'vezi logs backend');
+});
+
+// /restart - Restart servicii
+bot.command('restart', async (ctx) => {
+    const userId = ctx.from.id;
+    const session = userSessions[userId];
+    
+    if (!session) {
+        return ctx.reply('📭 Nu ai un proiect activ. Folosește /projects');
+    }
+    
+    await ctx.reply('🔄 Restart servicii...');
+    await commander.processMessage(ctx.chat.id, userId, session.projectId, 'restart toate serviciile');
+});
+
+// /test - Rulează teste
+bot.command('test', async (ctx) => {
+    const userId = ctx.from.id;
+    const session = userSessions[userId];
+    
+    if (!session) {
+        return ctx.reply('📭 Nu ai un proiect activ. Folosește /projects');
+    }
+    
+    await ctx.reply('🧪 Rulez testele...');
+    await commander.processMessage(ctx.chat.id, userId, session.projectId, 'rulează teste');
+});
+
+// /env - Setează variabilă de mediu
+bot.command('env', async (ctx) => {
+    const userId = ctx.from.id;
+    const session = userSessions[userId];
+    
+    if (!session) {
+        return ctx.reply('📭 Nu ai un proiect activ. Folosește /projects');
+    }
+    
+    const args = ctx.message.text.split(' ').slice(1);
+    if (args.length < 2) {
+        return ctx.reply(
+            `⚙️ <b>Setare variabilă de mediu</b>\n\n` +
+            `Folosire: <code>/env KEY value</code>\n` +
+            `Exemplu: <code>/env DATABASE_URL postgresql://...</code>\n\n` +
+            `Sau scrie natural: "setează JWT_SECRET=abc123"`,
+            { parse_mode: 'HTML' }
+        );
+    }
+    
+    const key = args[0];
+    const value = args.slice(1).join(' ');
+    
+    await ctx.reply(`⚙️ Setez ${key}...`);
+    await commander.processMessage(ctx.chat.id, userId, session.projectId, `setează ${key}=${value}`);
+});
+
+// /chat - Mod conversație liberă cu AI (fără interpretare comenzi)
+bot.command('chat', async (ctx) => {
+    const userId = ctx.from.id;
+    const session = userSessions[userId];
+    
+    if (!session) {
+        return ctx.reply('📭 Nu ai un proiect activ. Folosește /projects');
+    }
+    
+    // Activăm modul chat liber
+    session.chatMode = 'free';
+    
+    await ctx.reply(
+        `💬 <b>Mod conversație liberă activat</b>\n\n` +
+        `Acum pot vorbi cu tine direct fără să interpretez comenzi.\n` +
+        `Spune-mi ce vrei să discutăm despre proiect!\n\n` +
+        `Pentru a ieși: <code>/exit</code> sau orice comandă /`,
+        { parse_mode: 'HTML' }
+    );
+});
+
+// /exit - Ieși din modul chat liber
+bot.command('exit', async (ctx) => {
+    const userId = ctx.from.id;
+    const session = userSessions[userId];
+    
+    if (session) {
+        session.chatMode = 'normal';
+    }
+    
+    await ctx.reply('✅ Am revenit la modul normal. Comenzile sunt active din nou.');
+});
+
+// /skill - Creează skill nou (autonomie AI)
+bot.command('skill', async (ctx) => {
+    const userId = ctx.from.id;
+    const session = userSessions[userId];
+    
+    if (!session) {
+        return ctx.reply('📭 Nu ai un proiect activ. Folosește /projects');
+    }
+    
+    const args = ctx.message.text.split(' ').slice(1);
+    const skillRequest = args.join(' ');
+    
+    if (!skillRequest) {
+        return ctx.reply(
+            `🔧 <b>Creează skill nou</b>\n\n` +
+            `Descrie ce vrei să pot face:\n` +
+            `<code>/skill să pot genera diagrame din cod</code>\n\n` +
+            `Sau spune ce problemă ai:\n` +
+            `<code>/skill am nevoie să procesez fișiere CSV</code>`,
+            { parse_mode: 'HTML' }
+        );
+    }
+    
+    await ctx.reply(`🔧 Analizez și creez skill pentru: "${skillRequest}"...`);
+    
+    // Apelăm skill manager să genereze
+    const skillManager = new SkillManagerAgent(bot);
+    await skillManager.generateSkillFromRequest(ctx.chat.id, session.projectId, skillRequest);
 });
 
 // ==================== HANDLER FIȘIERE (PDF, etc.) ====================
@@ -342,6 +523,13 @@ bot.on('text', async (ctx) => {
         if (session.pendingPDF) {
             const handled = await handlePDFCommand(ctx, text, session);
             if (handled) return;
+        }
+
+        // Dacă suntem în modul chat liber, mergem direct la conversație
+        if (session.chatMode === 'free') {
+            console.log('💬 Mod chat liber - conversație directă');
+            await manager.handleGeneralChat(session.chatId, session.projectId, text);
+            return;
         }
 
         // Încercăm mai întâi să vedem dacă e o comandă pentru agenți
@@ -640,6 +828,27 @@ async function start() {
         // Inițializare DB
         await initDB();
         await initLogsTable();
+        
+        // Înregistrăm comenzile în Telegram
+        await bot.telegram.setMyCommands([
+            { command: 'start', description: 'Proiect nou' },
+            { command: 'projects', description: 'Listează proiecte' },
+            { command: 'status', description: 'Status proiect curent' },
+            { command: 'files', description: 'Listează fișiere' },
+            { command: 'download', description: 'Download ZIP' },
+            { command: 'pr', description: 'Creează Pull Request' },
+            { command: 'push', description: 'Push cod pe GitHub' },
+            { command: 'deploy', description: 'Deploy pe Railway' },
+            { command: 'logs', description: 'Vezi logs' },
+            { command: 'restart', description: 'Restart servicii' },
+            { command: 'test', description: 'Rulează teste' },
+            { command: 'env', description: 'Setează variabilă de mediu' },
+            { command: 'chat', description: 'Mod conversație liberă' },
+            { command: 'skill', description: 'Creează skill nou' },
+            { command: 'reset', description: 'Resetează sesiunea' },
+            { command: 'help', description: 'Ajutor' }
+        ]);
+        console.log('✅ Comenzi înregistrate în Telegram');
         
         // Pornim botul
         bot.launch();

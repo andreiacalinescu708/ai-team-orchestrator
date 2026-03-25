@@ -12,7 +12,7 @@ class CommandParser {
             test: /test|verifica|ruleaza test/i,
             env: /variabila|env|seteaza|configureaza/i,
             database: /baza de date|database|creaza tabela/i,
-            github: /github|push|commit|repo|pull request|pr/i,
+            // github: eliminat - AI va decide când e o comandă GitHub reală vs conversație
             download: /download|descarc[aă]|salveaz[aă]|zip|export/i,
             pdf: /pdf|extrage|factura|raport|document/i,
             restart: /restart|reporneste|reincarca/i,
@@ -41,6 +41,15 @@ class CommandParser {
      */
     matchPattern(message) {
         const lowerMsg = message.toLowerCase();
+
+        // Verificăm dacă e o întrebare conversațională (nu comandă)
+        const conversationalWords = /\bce|cum|cine|unde|care|cat|de ce\b/i;
+        const isConversational = conversationalWords.test(message);
+        
+        // Dacă e întrebare despre proiect, nu comandă
+        if (isConversational && !message.match(/\b(status|deploy|logs|test|github)\b/i)) {
+            return null;
+        }
 
         // Deploy
         if (this.patterns.deploy.test(message)) {
@@ -101,24 +110,6 @@ class CommandParser {
                 action: 'create',
                 confirmation: true,
                 description: 'Creare/Modificare bază de date'
-            };
-        }
-
-        // GitHub
-        if (this.patterns.github.test(message)) {
-            const action = message.includes('push') ? 'push' : 
-                          message.includes('init') || message.includes('creaz') ? 'init' :
-                          message.includes('pr') || message.includes('pull request') ? 'pr' :
-                          message.includes('status') ? 'status' : 'push';
-            
-            return {
-                type: 'github',
-                action: action,
-                confirmation: action !== 'status',
-                description: action === 'push' ? 'Push cod în GitHub' :
-                           action === 'init' ? 'Initializează repo GitHub' :
-                           action === 'pr' ? 'Crează Pull Request' :
-                           'Status GitHub Actions'
             };
         }
 
@@ -215,11 +206,18 @@ class CommandParser {
                 role: 'system',
                 content: `Ești un parser de comenzi. Analizează mesajul și extrage intenția.
 
-Tipuri posibile: deploy, logs, test, env, database, restart, status, scale, unknown
+Tipuri posibile: deploy, logs, test, env, database, github, download, pdf, restart, status, scale, unknown
+
+Pentru 'github', include și 'action': 'push|pr|init|status'
+Pentru 'pdf', include și 'action': 'extract|summarize|generate|tables'
+Pentru 'download', include și 'downloadType': 'zip|structure|file'
+
+IMPORTANT: Dacă mesajul este conversație normală (ex: "ce zici de...", "cum facem...", "putem face..."), returnează type: "unknown"
 
 Răspunde cu JSON:
 {
   "type": "tipul_comenzii",
+  "action": "pentru github/pdf",
   "platform": "railway|vercel|etc (pentru deploy)",
   "service": "backend|frontend|database (dacă e specificat)",
   "confirmation": true|false (true pentru acțiuni distructive),

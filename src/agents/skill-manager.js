@@ -234,6 +234,92 @@ class SkillManagerAgent {
         // Stocăm starea wizard în sesiunea userului
         // (ar trebui implementat cu o mapă de sesiuni)
     }
+
+    /**
+     * Generează un skill bazat pe cererea explicită a userului
+     * Permite AI-ului să creeze capabilități noi la cerere
+     */
+    async generateSkillFromRequest(chatId, projectId, request) {
+        await logger.info('Generare skill la cerere', { projectId, request });
+
+        try {
+            // 1. Analizăm cererea și generăm un nume de skill
+            const skillName = this.sanitizeSkillName(request);
+            
+            await this.bot.telegram.sendMessage(chatId, 
+                `🔧 Generez skill: <code>${skillName}</code>\n` +
+                `⏱️ Acest proces durează ~30 secunde...`,
+                { parse_mode: 'HTML' }
+            );
+
+            await this.bot.telegram.sendChatAction(chatId, 'typing');
+
+            // 2. Generăm skill-ul cu descriere bogată
+            const skill = await this.generator.generateSkill(
+                skillName,
+                `Skill generat la cerere: ${request}`,
+                request // Folosim cererea ca context suplimentar
+            );
+
+            // 3. Testăm skill-ul
+            await this.bot.telegram.sendMessage(chatId, '🧪 Testez skill-ul generat...');
+            const testResult = await this.generator.testSkill(skill);
+            
+            if (!testResult.success) {
+                throw new Error(`Test eșuat: ${testResult.error}`);
+            }
+
+            // 4. Salvăm skill-ul
+            const saveResult = await this.generator.saveSkill(skill);
+            if (!saveResult.success) {
+                throw new Error(`Salvare eșuată: ${saveResult.error}`);
+            }
+
+            // 5. Înregistrăm în DB
+            await this.registry.registerSkill(skill);
+
+            // 6. Confirmare succes
+            await this.bot.telegram.sendMessage(chatId,
+                `✅ <b>Skill creat cu succes!</b>\n\n` +
+                `<b>Nume:</b> <code>${skillName}</code>\n` +
+                `<b>Funcționalitate:</b> ${request}\n\n` +
+                `Pot folosi acest skill imediat.`,
+                { parse_mode: 'HTML' }
+            );
+
+            return { success: true, skillName };
+
+        } catch (error) {
+            await logger.error('Eroare generare skill', { projectId, error: error.message });
+            await this.bot.telegram.sendMessage(chatId,
+                `❌ <b>Eroare la crearea skill-ului:</b>\n` +
+                `${error.message}\n\n` +
+                `Încearcă o descriere mai clară sau diferită.`,
+                { parse_mode: 'HTML' }
+            );
+            return { success: false, error: error.message };
+        }
+    }
+
+    /**
+     * Convertește o cerere text într-un nume de skill valid
+     */
+    sanitizeSkillName(request) {
+        // Extragem cuvintele cheie și creăm un nume camelCase
+        const words = request
+            .toLowerCase()
+            .replace(/[^a-z0-9\s]/g, ' ')
+            .split(/\s+/)
+            .filter(w => w.length > 2 && !['pentru', 'care', 'să', 'pot', 'face', 'avea', 'nevoie', 'din', 'sau', 'și'].includes(w))
+            .slice(0, 4);
+        
+        if (words.length === 0) {
+            return 'customSkill' + Date.now();
+        }
+
+        // Primul cuvânt lowercase, restul capitalize
+        return words[0] + words.slice(1).map(w => w.charAt(0).toUpperCase() + w.slice(1)).join('');
+    }
 }
 
 module.exports = { SkillManagerAgent };
