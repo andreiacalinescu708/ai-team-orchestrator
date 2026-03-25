@@ -3,7 +3,7 @@ const { query } = require('../utils/db');
 const { PlanExecutor } = require('../executor');
 const { Logger } = require('../utils/logger');
 const { SkillManagerAgent } = require('./skill-manager');
-const { VercelService } = require('../services/vercelService');
+const { SurgeService } = require('../services/surgeService');
 
 const logger = new Logger('ManagerAgent');
 
@@ -14,7 +14,7 @@ const logger = new Logger('ManagerAgent');
 class ManagerAgent {
     constructor(bot) {
         this.bot = bot;
-        this.vercelService = new VercelService();
+        this.surgeService = new SurgeService();
     }
 
     /**
@@ -193,7 +193,7 @@ Când ai suficiente informații, răspunde cu [DISCOVERY_COMPLETE] și sumarul.`
                 // Deploy automat preview pentru frontend
                 if (result.files.some(f => f.includes('frontend') || f.includes('index.html'))) {
                     // Deploy automat pe Vercel
-                    await this.deployToVercel(chatId, projectId, userId);
+                    await this.deployToSurge(chatId, projectId, userId);
                 }
             })
             .catch(error => {
@@ -228,30 +228,30 @@ Ce dorești să faci?`;
     }
 
     /**
-     * Deploy automat pe Vercel
+     * Deploy automat pe Surge (public, fără login)
      */
-    async deployToVercel(chatId, projectId, userId) {
+    async deployToSurge(chatId, projectId, userId) {
         try {
-            await this.bot.telegram.sendMessage(chatId, '🚀 <i>Deploying pe Vercel...</i>', { parse_mode: 'HTML' });
+            await this.bot.telegram.sendMessage(chatId, '🚀 <i>Deploying...</i>', { parse_mode: 'HTML' });
             
             const projectPath = `./projects/project-${projectId}`;
-            const result = await this.vercelService.deploy(projectId, projectPath, userId);
+            const result = await this.surgeService.deploy(projectId, projectPath, userId, 24); // 24 ore
             
             if (result.success) {
-                const message = result.isExisting 
-                    ? `🚀 <b>Site-ul este deja live!</b>`
-                    : `🚀 <b>Site-ul tău e live pe Vercel!</b>`;
-                    
+                const expiresAt = result.expiresAt.toLocaleString('ro-RO');
+                
                 await this.bot.telegram.sendMessage(chatId, 
-                    `${message}\n\n` +
+                    `🚀 <b>Site-ul tău e live!</b>\n\n` +
                     `🔗 <a href="${result.url}">${result.url}</a>\n\n` +
-                    `✅ Deploy permanent\n` +
-                    `⚡ Viteza CDN global`,
+                    `✅ Acces public - NU necesită login\n` +
+                    `⏰ Disponibil până: ${expiresAt}\n\n` +
+                    `Poți prelungi durata oricând.`,
                     { 
                         parse_mode: 'HTML',
                         reply_markup: {
                             inline_keyboard: [
                                 [{text: '🔗 Deschide site-ul', url: result.url}],
+                                [{text: '⏰ Prelungește 24h', callback_data: `extend_surge_${projectId}`}],
                                 [{text: '📁 Vezi fișierele', callback_data: `view_files_${projectId}`}]
                             ]
                         }
@@ -264,7 +264,7 @@ Ce dorești să faci?`;
                 );
             }
         } catch (error) {
-            await logger.error('Eroare deploy Vercel', { projectId, error: error.message });
+            await logger.error('Eroare deploy', { projectId, error: error.message });
         }
     }
 
