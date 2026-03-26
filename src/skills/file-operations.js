@@ -1,17 +1,34 @@
 const fs = require('fs').promises;
 const path = require('path');
+const { FileStorageService } = require('../services/fileStorageService');
+
+const fileStorage = new FileStorageService();
 
 /**
- * Skill: Scriere fișier
- * Creează sau suprascrie un fișier cu conținutul specificat
+ * Extrage projectId din path
+ * Ex: ./projects/project-3/frontend/index.html -> 3
+ */
+function extractProjectId(filePath) {
+    const match = filePath.match(/project-(\d+)/);
+    return match ? parseInt(match[1]) : null;
+}
+
+/**
+ * Skill: Scriere fișier în DB și pe disk
  */
 async function writeFile(filePath, content) {
     try {
-        // Creăm directoarele dacă nu există
+        const projectId = extractProjectId(filePath);
+        const relativePath = filePath.replace(/^.+?project-\d+\//, '');
+        
+        // Salvăm în DB (persistă între restart-uri)
+        if (projectId) {
+            await fileStorage.saveFile(projectId, relativePath, content, false);
+        }
+        
+        // Salvăm și pe disk (pentru acces rapid/deploy)
         const dir = path.dirname(filePath);
         await fs.mkdir(dir, { recursive: true });
-        
-        // Scriem fișierul
         await fs.writeFile(filePath, content, 'utf8');
         
         return {
@@ -29,11 +46,26 @@ async function writeFile(filePath, content) {
 }
 
 /**
- * Skill: Citire fișier
- * Citește conținutul unui fișier
+ * Skill: Citire fișier - încearcă din DB mai întâi, apoi de pe disk
  */
 async function readFile(filePath) {
     try {
+        const projectId = extractProjectId(filePath);
+        const relativePath = filePath.replace(/^.+?project-\d+\//, '');
+        
+        // Încercăm din DB mai întâi
+        if (projectId) {
+            const dbResult = await fileStorage.getFile(projectId, relativePath);
+            if (dbResult.success) {
+                return {
+                    success: true,
+                    path: filePath,
+                    content: dbResult.content
+                };
+            }
+        }
+        
+        // Fallback la disk
         const content = await fs.readFile(filePath, 'utf8');
         return {
             success: true,
@@ -49,44 +81,7 @@ async function readFile(filePath) {
 }
 
 /**
- * Skill: Listare director
- * Listează fișierele dintr-un director
- */
-async function listDirectory(dirPath) {
-    try {
-        const entries = await fs.readdir(dirPath, { withFileTypes: true });
-        return {
-            success: true,
-            path: dirPath,
-            files: entries
-                .filter(e => e.isFile())
-                .map(e => e.name),
-            directories: entries
-                .filter(e => e.isDirectory())
-                .map(e => e.name)
-        };
-    } catch (error) {
-        return {
-            success: false,
-            error: error.message
-        };
-    }
-}
-
-/**
- * Skill: Verificare existență fișier
- */
-async function fileExists(filePath) {
-    try {
-        await fs.access(filePath);
-        return { exists: true };
-    } catch {
-        return { exists: false };
-    }
-}
-
-/**
- * Creează structura de proiect
+ * Skill: Creare structură de directoare și fișiere
  */
 async function createProjectStructure(basePath, structure) {
     const results = [];
@@ -95,11 +90,15 @@ async function createProjectStructure(basePath, structure) {
         const fullPath = path.join(basePath, item.path);
         
         if (item.type === 'directory') {
-            await fs.mkdir(fullPath, { recursive: true });
-            results.push({ type: 'dir', path: fullPath });
+            try {
+                await fs.mkdir(fullPath, { recursive: true });
+                results.push({ type: 'dir', path: fullPath, success: true });
+            } catch (e) {
+                results.push({ type: 'dir', path: fullPath, success: false, error: e.message });
+            }
         } else if (item.type === 'file') {
             const result = await writeFile(fullPath, item.content || '');
-            results.push(result);
+            results.push({ type: 'file', path: fullPath, ...result });
         }
     }
     
@@ -107,48 +106,56 @@ async function createProjectStructure(basePath, structure) {
 }
 
 /**
- * Skill: Ștergere fișier
+ * Exportă fișierele din DB pe disk pentru deploy
  */
-async function deleteFile(filePath) {
-    try {
-        await fs.unlink(filePath);
-        return {
-            success: true,
-            message: `Fișier șters: ${filePath}`
-        };
-    } catch (error) {
-        return {
-            success: false,
-            error: error.message
-        };
-    }
+async function exportProjectToDisk(projectId, basePath) {
+    return await fileStorage.exportToDisk(projectId, basePath);
 }
 
 /**
- * Skill: Copiere fișier
+ * Listează fișierele unui proiect
  */
-async function copyFile(sourcePath, destPath) {
-    try {
-        await fs.mkdir(path.dirname(destPath), { recursive: true });
-        await fs.copyFile(sourcePath, destPath);
-        return {
-            success: true,
-            message: `Fișier copiat: ${sourcePath} -> ${destPath}`
-        };
-    } catch (error) {
-        return {
-            success: false,
-            error: error.message
-        };
+async function listProjectFiles(projectId) {
+    // Încearcă din DB mai întâi
+    const dbResult = await fileStorage.listFiles(projectId);
+    if (dbResult.success && dbResult.files.length > 0) {
+        return dbResult.files.map(f => f.path);
     }
+    
+    // Fallback la disk
+    try {
+        const basePath = `./projects/project-${projectId}`;
+        const files = await listFilesRecursive(basePath);
+        return files.map(f => f.replace(basePath + '/', ''));
+    } catch (e) {
+        return [];
+    }
+}
+
+async function listFilesRecursive(dir, basePath = '') {
+    const results = [];
+    const entries = await fs.readdir(dir, { withFileTypes: true });
+    
+    for (const entry of entries) {
+        const fullPath = path.join(dir, entry.name);
+        const relativePath = basePath ? `${basePath}/${entry.name}` : entry.name;
+        
+        if (entry.isDirectory()) {
+            const subFiles = await listFilesRecursive(fullPath, relativePath);
+            results.push(...subFiles);
+        } else {
+            results.push(fullPath);
+        }
+    }
+    
+    return results;
 }
 
 module.exports = {
     writeFile,
     readFile,
-    listDirectory,
-    fileExists,
     createProjectStructure,
-    deleteFile,
-    copyFile
+    exportProjectToDisk,
+    listProjectFiles,
+    fileStorage
 };

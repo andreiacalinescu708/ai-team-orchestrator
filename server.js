@@ -887,6 +887,11 @@ async function start() {
         await initDB();
         await initLogsTable();
         
+        // Inițializăm stocarea fișierelor în DB
+        const { FileStorageService } = require('./src/services/fileStorageService');
+        const fileStorage = new FileStorageService();
+        await fileStorage.init();
+        
         // Înregistrăm comenzile în Telegram
         await bot.telegram.setMyCommands([
             { command: 'start', description: 'Proiect nou' },

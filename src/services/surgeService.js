@@ -4,10 +4,12 @@ const fs = require('fs').promises;
 const path = require('path');
 const { Logger } = require('../utils/logger');
 const { SecurityService } = require('./securityService');
+const { FileStorageService } = require('./fileStorageService');
 
 const execAsync = promisify(exec);
 const logger = new Logger('SurgeService');
 const security = new SecurityService();
+const fileStorage = new FileStorageService();
 
 /**
  * Service pentru deploy temporar pe Surge.sh
@@ -36,6 +38,15 @@ class SurgeService {
                 };
             }
 
+            // Exportăm fișierele din DB pe disk (pentru că Railway șterge fișierele)
+            console.log(`📦 Export fișiere din DB pentru proiect ${projectId}...`);
+            const exportResult = await fileStorage.exportToDisk(projectId, projectPath);
+            if (!exportResult.success) {
+                console.warn('⚠️ Export eșuat, încercăm cu ce e pe disk:', exportResult.error);
+            } else {
+                console.log(`✅ ${exportResult.fileCount} fișiere exportate`);
+            }
+            
             // Găsim folderul cu build-ul
             const buildPath = await this.findBuildPath(projectPath);
             if (!buildPath) {
