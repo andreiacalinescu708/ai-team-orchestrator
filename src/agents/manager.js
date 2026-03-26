@@ -220,7 +220,7 @@ Ce dorești să faci?`;
                 inline_keyboard: [
                     [{text: '📁 Vezi fișierele', callback_data: `view_files_${projectId}`}],
                     [{text: '⬇️ Download ZIP', callback_data: `download_${projectId}`}],
-                    [{text: '🌐 Deploy pe Vercel', callback_data: `deploy_vercel_${projectId}`}],
+                    [{text: '🌐 Deploy Site Public', callback_data: `deploy_surge_${projectId}`}],
                     [{text: '🔄 Generează alt proiect', callback_data: 'new_project'}]
                 ]
             }
