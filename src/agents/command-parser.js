@@ -56,9 +56,9 @@ class CommandParser {
             const platform = this.extractPlatform(message);
             return {
                 type: 'deploy',
-                platform: platform || 'surge',
+                platform: platform || 'netlify',
                 confirmation: true,
-                description: `Deploy pe ${platform || 'Surge'}`
+                description: `Deploy pe ${platform || 'Netlify'}`
             };
         }
 
@@ -164,7 +164,7 @@ class CommandParser {
      * Extrage platforma din mesaj
      */
     extractPlatform(message) {
-        const platforms = ['surge', 'railway', 'vercel', 'heroku', 'aws', 'digitalocean'];
+        const platforms = ['netlify', 'surge', 'railway', 'vercel', 'heroku', 'aws', 'digitalocean'];
         const lower = message.toLowerCase();
         return platforms.find(p => lower.includes(p));
     }
