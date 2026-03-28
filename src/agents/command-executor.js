@@ -54,55 +54,48 @@ class CommandExecutor {
     }
 
     /**
-     * Deploy pe Railway
+     * Deploy pe Netlify
      */
     async deploy(chatId, projectId, intent) {
         await this.bot.telegram.sendMessage(chatId, '🚀 <b>Deploy în curs...</b>', { parse_mode: 'HTML' });
 
-        // Verificăm dacă suntem în mediu potrivit
-        const fs = require('fs');
-        const projectPath = `./projects/project-${projectId}`;
-        
-        if (!fs.existsSync(projectPath)) {
-            return {
-                success: false,
-                message: `❌ Proiectul nu există local.`
-            };
-        }
-
         try {
-            // Verificăm dacă avem token Railway
-            if (!this.railwayToken) {
+            // Exportăm fișierele din PostgreSQL
+            const { FileStorageService } = require('../services/fileStorageService');
+            const { NetlifyService } = require('../services/netlifyService');
+            
+            const fileStorage = new FileStorageService();
+            const netlify = new NetlifyService();
+            
+            const projectPath = `./projects/project-${projectId}`;
+            
+            console.log(`📦 Export fișiere din DB pentru proiect ${projectId}...`);
+            const exportResult = await fileStorage.exportToDisk(projectId, projectPath);
+            
+            if (!exportResult.success || exportResult.fileCount === 0) {
                 return {
                     success: false,
-                    message: '❌ RAILWAY_TOKEN nu e configurat. Adaugă-l în variabilele de mediu.'
+                    message: `❌ Proiectul nu există în baza de date.`
                 };
             }
+            
+            console.log(`✅ ${exportResult.fileCount} fișiere exportate`);
 
-            // Verificăm dacă railway CLI e disponibil
-            try {
-                await execAsync('railway --version');
-            } catch (e) {
+            // Deploy pe Netlify
+            const result = await netlify.deploy(projectId, projectPath, null, 24);
+
+            if (result.success) {
+                return {
+                    success: true,
+                    message: `🚀 <b>Deploy complet!</b>\n\n🔗 <a href="${result.url}">${result.url}</a>\n\n✅ Site public live!`,
+                    url: result.url
+                };
+            } else {
                 return {
                     success: false,
-                    message: `❌ <b>Railway CLI nu e instalat</b>\n\nInstalează cu: <code>npm install -g @railway/cli</code>`
+                    message: `❌ <b>Eroare deploy:</b>\n${result.message}`
                 };
             }
-
-            // Comandă deploy
-            const { stdout, stderr } = await execAsync('railway up', {
-                cwd: projectPath,
-                env: { ...process.env, RAILWAY_TOKEN: this.railwayToken },
-                timeout: 120000
-            });
-
-            await logger.info('Deploy executat', { projectId, output: stdout });
-
-            return {
-                success: true,
-                message: `✅ <b>Deploy complet!</b>\n\n<pre>${stdout.substring(0, 500)}</pre>`,
-                output: stdout
-            };
         } catch (error) {
             await logger.error('Eroare deploy', { projectId, error: error.message });
             return {
