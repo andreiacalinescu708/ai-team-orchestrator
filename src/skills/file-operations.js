@@ -151,11 +151,42 @@ async function listFilesRecursive(dir, basePath = '') {
     return results;
 }
 
+/**
+ * Skill: Listează conținutul unui director
+ */
+async function listDirectory(dirPath) {
+    try {
+        const entries = await fs.readdir(dirPath, { withFileTypes: true });
+        const files = [];
+        const directories = [];
+        
+        for (const entry of entries) {
+            if (entry.isDirectory()) {
+                directories.push(entry.name);
+            } else {
+                files.push(entry.name);
+            }
+        }
+        
+        return {
+            success: true,
+            files,
+            directories
+        };
+    } catch (error) {
+        return {
+            success: false,
+            error: error.message
+        };
+    }
+}
+
 module.exports = {
     writeFile,
     readFile,
     createProjectStructure,
     exportProjectToDisk,
     listProjectFiles,
+    listDirectory,
     fileStorage
 };
