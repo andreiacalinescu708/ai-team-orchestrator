@@ -45,11 +45,28 @@ class NetlifyService {
 
             // Găsim folderul cu build-ul
             const buildPath = await this.findBuildPath(projectPath);
+            console.log(`🔍 Build path găsit: ${buildPath}`);
+            
             if (!buildPath) {
-                return { success: false, message: '❌ Nu am găsit fișierele site-ului.' };
+                // Listăm ce fișiere există în proiect pentru debug
+                try {
+                    const files = await fs.readdir(projectPath, { recursive: true });
+                    console.log(`📂 Fișiere în ${projectPath}:`, files.slice(0, 20));
+                } catch (e) {
+                    console.log(`❌ Nu pot citi ${projectPath}:`, e.message);
+                }
+                return { success: false, message: '❌ Nu am găsit fișierele site-ului (lipsă index.html).' };
             }
 
-            await logger.info(`Deploying to Netlify for project ${projectId}`);
+            // Verificăm ce fișiere sunt în buildPath
+            try {
+                const buildFiles = await fs.readdir(buildPath, { recursive: true });
+                console.log(`📂 Fișiere în build path (${buildPath}):`, buildFiles.slice(0, 20));
+            } catch (e) {
+                console.log(`❌ Nu pot citi build path:`, e.message);
+            }
+
+            await logger.info(`Deploying to Netlify for project ${projectId} from ${buildPath}`);
 
             // Creăm site-ul pe Netlify
             const siteName = `ai-project-${projectId}-${Date.now()}`;
