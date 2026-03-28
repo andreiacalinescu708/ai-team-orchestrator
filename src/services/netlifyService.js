@@ -5,7 +5,10 @@ const { SecurityService } = require('./securityService');
 const { FileStorageService } = require('./fileStorageService');
 const fs = require('fs').promises;
 const path = require('path');
+const { exec } = require('child_process');
+const { promisify } = require('util');
 
+const execAsync = promisify(exec);
 const logger = new Logger('NetlifyService');
 const security = new SecurityService();
 const fileStorage = new FileStorageService();
@@ -42,6 +45,17 @@ class NetlifyService {
                 return { success: false, message: '❌ Nu am putut exporta fișierele.' };
             }
             console.log(`✅ ${exportResult.fileCount} fișiere exportate`);
+
+            // Verificăm dacă e proiect Node.js și facem build
+            const hasPackageJson = await this.fileExists(path.join(projectPath, 'package.json'));
+            if (hasPackageJson) {
+                console.log(`📦 Proiect Node.js detectat, facem build...`);
+                const buildResult = await this.buildProject(projectPath);
+                if (!buildResult.success) {
+                    return { success: false, message: `❌ Eroare build: ${buildResult.error}` };
+                }
+                console.log(`✅ Build complet`);
+            }
 
             // Găsim folderul cu build-ul
             const buildPath = await this.findBuildPath(projectPath);
@@ -254,6 +268,54 @@ class NetlifyService {
         }
 
         return null;
+    }
+
+    /**
+     * Verifică dacă un fișier există
+     */
+    async fileExists(filePath) {
+        try {
+            await fs.access(filePath);
+            return true;
+        } catch {
+            return false;
+        }
+    }
+
+    /**
+     * Face build pentru proiecte Node.js (React, Vue, etc.)
+     */
+    async buildProject(projectPath) {
+        try {
+            // Citim package.json pentru a vedea ce scripturi există
+            const packageJsonPath = path.join(projectPath, 'package.json');
+            const packageJson = JSON.parse(await fs.readFile(packageJsonPath, 'utf8'));
+            
+            // Verificăm dacă există scriptul 'build'
+            if (!packageJson.scripts || !packageJson.scripts.build) {
+                return { success: false, error: 'Nu există scriptul "build" în package.json' };
+            }
+
+            // Instalăm dependențele
+            console.log(`📦 Instalare dependențe...`);
+            await execAsync('npm install', { 
+                cwd: projectPath, 
+                timeout: 120000,
+                env: { ...process.env, NPM_CONFIG_PRODUCTION: 'false' }
+            });
+
+            // Facem build
+            console.log(`🔨 Build proiect...`);
+            await execAsync('npm run build', { 
+                cwd: projectPath, 
+                timeout: 120000 
+            });
+
+            return { success: true };
+        } catch (error) {
+            console.error('Eroare build:', error);
+            return { success: false, error: error.message };
+        }
     }
 
     async teardown(projectId) {
