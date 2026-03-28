@@ -10,6 +10,17 @@ const execAsync = promisify(exec);
 const logger = new Logger('CommandExecutor');
 
 /**
+ * Escape HTML special characters for Telegram
+ */
+function escapeHtml(text) {
+    if (!text) return '';
+    return text
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;');
+}
+
+/**
  * CommandExecutor - Execută comenzile parsează
  */
 class CommandExecutor {
@@ -93,14 +104,14 @@ class CommandExecutor {
             } else {
                 return {
                     success: false,
-                    message: `❌ <b>Eroare deploy:</b>\n${result.message}`
+                    message: `❌ <b>Eroare deploy:</b>\n<pre>${escapeHtml(result.message)}</pre>`
                 };
             }
         } catch (error) {
             await logger.error('Eroare deploy', { projectId, error: error.message });
             return {
                 success: false,
-                message: `❌ <b>Eroare deploy:</b>\n<code>${error.message}</code>`
+                message: `❌ <b>Eroare deploy:</b>\n<pre>${escapeHtml(error.message)}</pre>`
             };
         }
     }
