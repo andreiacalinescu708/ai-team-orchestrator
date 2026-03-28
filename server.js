@@ -615,8 +615,8 @@ bot.action(/view_files_(.+)/, async (ctx) => {
     }
     
     // Verificare acces
-    const { query } = require('./src/utils/db');
-    const hasAccess = await security.validateUserAccess(userId, projectId, { query });
+    const db = require('./src/utils/db');
+    const hasAccess = await security.validateUserAccess(userId, projectId, db);
     if (!hasAccess) {
         security.logSecurityEvent(userId, 'UNAUTHORIZED_FILE_ACCESS', { projectId }, 'critical');
         return ctx.reply('❌ Nu ai acces la acest proiect.');
@@ -825,8 +825,8 @@ bot.action(/deploy_netlify_(.+)/, async (ctx) => {
         }
         
         // Verificare acces
-        const { query } = require('./src/utils/db');
-        const hasAccess = await security.validateUserAccess(userId, projectId, { query });
+        const db = require('./src/utils/db');
+        const hasAccess = await security.validateUserAccess(userId, projectId, db);
         if (!hasAccess) {
             security.logSecurityEvent(userId, 'UNAUTHORIZED_DEPLOY', { projectId }, 'critical');
             return ctx.reply('❌ Nu ai acces la acest proiect.');
