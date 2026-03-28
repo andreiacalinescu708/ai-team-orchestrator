@@ -46,20 +46,37 @@ class NetlifyService {
             }
             console.log(`✅ ${exportResult.fileCount} fișiere exportate`);
 
-            // Verificăm dacă e proiect Node.js și facem build
-            const hasPackageJson = await this.fileExists(path.join(projectPath, 'package.json'));
-            if (hasPackageJson) {
-                console.log(`📦 Proiect Node.js detectat, facem build...`);
-                const buildResult = await this.buildProject(projectPath);
-                if (!buildResult.success) {
-                    return { success: false, message: `❌ Eroare build: ${buildResult.error}` };
-                }
-                console.log(`✅ Build complet`);
-            }
-
-            // Găsim folderul cu build-ul
+            // Găsim folderul cu build-ul (unde e index.html)
             const buildPath = await this.findBuildPath(projectPath);
             console.log(`🔍 Build path găsit: ${buildPath}`);
+            
+            // Verificăm dacă e proiect Node.js în folderul sursă și facem build
+            if (buildPath) {
+                const hasPackageJson = await this.fileExists(path.join(buildPath, 'package.json'));
+                if (hasPackageJson) {
+                    console.log(`📦 Proiect Node.js detectat în ${buildPath}, facem build...`);
+                    const buildResult = await this.buildProject(buildPath);
+                    if (!buildResult.success) {
+                        return { success: false, message: `❌ Eroare build: ${buildResult.error}` };
+                    }
+                    console.log(`✅ Build complet`);
+                    
+                    // După build, căutăm din nou folderul dist/
+                    const distPath = path.join(buildPath, 'dist');
+                    try {
+                        await fs.access(path.join(distPath, 'index.html'));
+                        console.log(`🔍 Folosim folderul dist: ${distPath}`);
+                        // Actualizăm buildPath să pointeze la dist
+                        var finalBuildPath = distPath;
+                    } catch (e) {
+                        var finalBuildPath = buildPath;
+                    }
+                } else {
+                    var finalBuildPath = buildPath;
+                }
+            } else {
+                var finalBuildPath = null;
+            }
             
             if (!buildPath) {
                 // Listăm ce fișiere există în proiect pentru debug
@@ -72,15 +89,15 @@ class NetlifyService {
                 return { success: false, message: '❌ Nu am găsit fișierele site-ului (lipsă index.html).' };
             }
 
-            // Verificăm ce fișiere sunt în buildPath
+            // Verificăm ce fișiere sunt în finalBuildPath
             try {
-                const buildFiles = await fs.readdir(buildPath, { recursive: true });
-                console.log(`📂 Fișiere în build path (${buildPath}):`, buildFiles.slice(0, 20));
+                const buildFiles = await fs.readdir(finalBuildPath, { recursive: true });
+                console.log(`📂 Fișiere în final build path (${finalBuildPath}):`, buildFiles.slice(0, 20));
             } catch (e) {
-                console.log(`❌ Nu pot citi build path:`, e.message);
+                console.log(`❌ Nu pot citi final build path:`, e.message);
             }
 
-            await logger.info(`Deploying to Netlify for project ${projectId} from ${buildPath}`);
+            await logger.info(`Deploying to Netlify for project ${projectId} from ${finalBuildPath}`);
 
             // Creăm site-ul pe Netlify
             const siteName = `ai-project-${projectId}-${Date.now()}`;
@@ -91,7 +108,7 @@ class NetlifyService {
             }
 
             // Facem deploy
-            const deploy = await this.deploySite(site.siteId, buildPath);
+            const deploy = await this.deploySite(site.siteId, finalBuildPath);
             
             if (!deploy.success) {
                 throw new Error(deploy.error);
