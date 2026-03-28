@@ -21,6 +21,15 @@ function escapeHtml(text) {
 }
 
 /**
+ * Trunchiază textul pentru a respecta limita Telegram (4096 caractere)
+ * Lasă margine de siguranță de 100 caractere pentru tag-uri HTML
+ */
+function truncateMessage(text, maxLength = 3900) {
+    if (!text || text.length <= maxLength) return text;
+    return text.substring(0, maxLength) + '\n\n... (mesaj trunchiat)';
+}
+
+/**
  * CommandExecutor - Execută comenzile parsează
  */
 class CommandExecutor {
@@ -104,14 +113,14 @@ class CommandExecutor {
             } else {
                 return {
                     success: false,
-                    message: `❌ <b>Eroare deploy:</b>\n<pre>${escapeHtml(result.message)}</pre>`
+                    message: truncateMessage(`❌ <b>Eroare deploy:</b>\n<pre>${escapeHtml(result.message)}</pre>`)
                 };
             }
         } catch (error) {
             await logger.error('Eroare deploy', { projectId, error: error.message });
             return {
                 success: false,
-                message: `❌ <b>Eroare deploy:</b>\n<pre>${escapeHtml(error.message)}</pre>`
+                message: truncateMessage(`❌ <b>Eroare deploy:</b>\n<pre>${escapeHtml(error.message)}</pre>`)
             };
         }
     }
