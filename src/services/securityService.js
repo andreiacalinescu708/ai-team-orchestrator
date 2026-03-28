@@ -131,7 +131,8 @@ class SecurityService {
                 return false;
             }
 
-            return result.rows[0].user_id === userId;
+            // Comparăm ca string pentru a evita probleme cu bigint vs number
+            return String(result.rows[0].user_id) === String(userId);
         } catch (err) {
             console.error('Eroare validare acces:', err);
             return false;
