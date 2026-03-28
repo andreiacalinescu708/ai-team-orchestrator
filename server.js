@@ -809,11 +809,11 @@ bot.action(/select_project_(.+)/, async (ctx) => {
 });
 
 // Handler pentru deploy pe Surge
-bot.action(/deploy_surge_(.+)/, async (ctx) => {
+bot.action(/deploy_netlify_(.+)/, async (ctx) => {
     const projectId = ctx.match[1];
     const userId = ctx.from.id;
     
-    await ctx.answerCbQuery('🚀 Se face deploy...');
+    await ctx.answerCbQuery('🚀 Se face deploy pe Netlify...');
     
     try {
         // Validare securitate
@@ -834,7 +834,7 @@ bot.action(/deploy_surge_(.+)/, async (ctx) => {
         
         const { ManagerAgent } = require('./src/agents/manager');
         const manager = new ManagerAgent(bot);
-        await manager.deployToSurge(ctx.chat.id, projectId, userId);
+        await manager.deployToNetlify(ctx.chat.id, projectId, userId);
     } catch (err) {
         console.error('Eroare deploy:', err);
         ctx.reply('❌ Eroare la deploy. Încearcă din nou.');

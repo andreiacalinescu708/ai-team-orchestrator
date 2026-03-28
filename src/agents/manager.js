@@ -3,6 +3,7 @@ const { query } = require('../utils/db');
 const { PlanExecutor } = require('../executor');
 const { Logger } = require('../utils/logger');
 const { SkillManagerAgent } = require('./skill-manager');
+const { NetlifyService } = require('../services/netlifyService');
 const { SurgeService } = require('../services/surgeService');
 
 const logger = new Logger('ManagerAgent');
@@ -14,6 +15,7 @@ const logger = new Logger('ManagerAgent');
 class ManagerAgent {
     constructor(bot) {
         this.bot = bot;
+        this.netlifyService = new NetlifyService();
         this.surgeService = new SurgeService();
     }
 
@@ -193,7 +195,7 @@ Când ai suficiente informații, răspunde cu [DISCOVERY_COMPLETE] și sumarul.`
                 // Deploy automat preview pentru frontend
                 if (result.files.some(f => f.includes('frontend') || f.includes('index.html'))) {
                     // Deploy automat pe Vercel
-                    await this.deployToSurge(chatId, projectId, userId);
+                    await this.deployToNetlify(chatId, projectId, userId);
                 }
             })
             .catch(error => {
@@ -220,7 +222,7 @@ Ce dorești să faci?`;
                 inline_keyboard: [
                     [{text: '📁 Vezi fișierele', callback_data: `view_files_${projectId}`}],
                     [{text: '⬇️ Download ZIP', callback_data: `download_${projectId}`}],
-                    [{text: '🌐 Deploy Site Public', callback_data: `deploy_surge_${projectId}`}],
+                    [{text: '🌐 Deploy Site Public', callback_data: `deploy_netlify_${projectId}`}],
                     [{text: '🔄 Generează alt proiect', callback_data: 'new_project'}]
                 ]
             }
@@ -265,6 +267,41 @@ Ce dorești să faci?`;
             }
         } catch (error) {
             await logger.error('Eroare deploy', { projectId, error: error.message });
+        }
+    }
+
+    async deployToNetlify(chatId, projectId, userId) {
+        try {
+            await this.bot.telegram.sendMessage(chatId, '🚀 <i>Deploying pe Netlify...</i>', { parse_mode: 'HTML' });
+            
+            const projectPath = `./projects/project-${projectId}`;
+            const result = await this.netlifyService.deploy(projectId, projectPath, userId, `ai-project-${projectId}`);
+            
+            if (result.success) {
+                await this.bot.telegram.sendMessage(chatId, 
+                    `🚀 <b>Site-ul tău e live pe Netlify!</b>\n\n` +
+                    `🔗 <a href="${result.url}">${result.url}</a>\n\n` +
+                    `✅ Acces public - vizibil pentru oricine\n` +
+                    `🌐 Hosting gratuit pe Netlify`,
+                    { 
+                        parse_mode: 'HTML',
+                        reply_markup: {
+                            inline_keyboard: [
+                                [{text: '🔗 Deschide site-ul', url: result.url}],
+                                [{text: '📁 Vezi fișierele', callback_data: `view_files_${projectId}`}]
+                            ]
+                        }
+                    }
+                );
+            } else {
+                await this.bot.telegram.sendMessage(chatId, 
+                    `⚠️ <b>Deploy nereușit</b>\n\n${result.message}`,
+                    { parse_mode: 'HTML' }
+                );
+            }
+        } catch (error) {
+            await logger.error('Eroare deploy Netlify', { projectId, error: error.message });
+            await this.bot.telegram.sendMessage(chatId, `❌ Eroare: ${error.message}`);
         }
     }
 
