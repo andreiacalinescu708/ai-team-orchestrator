@@ -1,4 +1,4 @@
-const { callKimiThinkingThinking } = require('../../utils/kimi-optimized');
+const { callKimiThinking } = require('../../utils/kimi');
 const { writeFile, createProjectStructure } = require('../../skills/file-operations');
 const { getProjectPath } = require('../../utils/project');
 const { Logger } = require('../../utils/logger');
