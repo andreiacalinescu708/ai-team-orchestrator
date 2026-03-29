@@ -101,8 +101,9 @@ class CodeFixerService {
             let fixedContent = fileContent;
             let fixApplied = null;
 
-            // Eroare: paranteze/acolade nebalansate
-            if (errorInfo.errorType?.includes('Expected') && errorInfo.found === 'export') {
+            // Eroare: paranteze/acolade nebalansate (lipsă sau în plus)
+            if (errorInfo.errorType?.includes('Expected') && 
+                (errorInfo.found === 'export' || errorInfo.found === ')' || errorInfo.found === '}')) {
                 fixApplied = await this.fixMissingParentheses(fileContent, errorInfo);
                 if (fixApplied.success) {
                     fixedContent = fixApplied.content;
@@ -160,48 +161,98 @@ class CodeFixerService {
     }
 
     /**
-     * Fix pentru paranteze/acolade lipsă înainte de export
+     * Fix pentru paranteze/acolade lipsă sau în plus înainte de export
      */
     async fixMissingParentheses(content, errorInfo) {
         const lines = content.split('\n');
         const errorLine = errorInfo.line - 1; // 0-indexed
 
-        // Căutăm înapoi să găsim unde lipsesc parantezele
-        let openParens = 0;
-        let openBraces = 0;
-        let fixLine = -1;
-
-        for (let i = 0; i < errorLine && i < lines.length; i++) {
-            const line = lines[i];
-            openParens += (line.match(/\(/g) || []).length;
-            openParens -= (line.match(/\)/g) || []).length;
-            openBraces += (line.match(/\{/g) || []).length;
-            openBraces -= (line.match(/\}/g) || []).length;
-        }
-
-        // Dacă avem paranteze deschise, trebuie să le închidem
-        if (openParens > 0 || openBraces > 0) {
-            // Inserăm parantezele înainte de export
-            const parensToAdd = ')'.repeat(Math.max(0, openParens));
-            const bracesToAdd = '}'.repeat(Math.max(0, openBraces));
+        // CAZ 1: Paranteze/acolade LIPSĂ (expected ")" sau "}", found "export")
+        if (errorInfo.expected === ')' || errorInfo.expected === '}' || 
+            (errorInfo.found === 'export' && errorInfo.errorType?.includes('Expected'))) {
             
-            // Găsim linia cu export default
-            for (let i = errorLine - 1; i >= 0; i--) {
-                if (lines[i].includes('export default')) {
-                    lines[i] = parensToAdd + bracesToAdd + '\n' + lines[i];
-                    fixLine = i;
-                    break;
+            // Căutăm înapoi să găsim unde lipsesc parantezele
+            let openParens = 0;
+            let openBraces = 0;
+
+            for (let i = 0; i < errorLine && i < lines.length; i++) {
+                const line = lines[i];
+                openParens += (line.match(/\(/g) || []).length;
+                openParens -= (line.match(/\)/g) || []).length;
+                openBraces += (line.match(/\{/g) || []).length;
+                openBraces -= (line.match(/\}/g) || []).length;
+            }
+
+            // Dacă avem paranteze deschise, trebuie să le închidem
+            if (openParens > 0 || openBraces > 0) {
+                const parensToAdd = ')'.repeat(Math.max(0, openParens));
+                const bracesToAdd = '}'.repeat(Math.max(0, openBraces));
+                
+                // Găsim linia cu export default
+                for (let i = errorLine - 1; i >= 0; i--) {
+                    if (lines[i].includes('export default')) {
+                        lines[i] = parensToAdd + bracesToAdd + '\n' + lines[i];
+                        return {
+                            success: true,
+                            type: 'missing-parentheses',
+                            description: `Adăugat ${openParens} paranteze și ${openBraces} acolade`,
+                            content: lines.join('\n')
+                        };
+                    }
                 }
             }
+        }
 
-            if (fixLine >= 0) {
-                return {
-                    success: true,
-                    type: 'missing-parentheses',
-                    description: `Adăugat ${openParens} paranteze și ${openBraces} acolade înainte de export`,
-                    content: lines.join('\n')
-                };
+        // CAZ 2: Paranteze/acolade ÎN PLUS (expected ">", found ")" sau "}")
+        if (errorInfo.expected === '>' && (errorInfo.found === ')' || errorInfo.found === '}')) {
+            // Eliminăm parantezele/acoladele în plus de pe linia cu eroare
+            const lineContent = lines[errorLine];
+            
+            // Eliminăm caracterele în plus de la finalul liniei
+            let fixedLine = lineContent.replace(/\)+\}*\s*$/, '');
+            
+            // Verificăm și linia anterioară dacă există caractere în plus
+            if (errorLine > 0) {
+                let prevLine = lines[errorLine - 1];
+                // Dacă linia anterioară se termină cu ) sau } în plus
+                if (/\)+\}*\s*$/.test(prevLine)) {
+                    // Păstrăm doar perechile balansate
+                    const openParens = (prevLine.match(/\(/g) || []).length;
+                    const closeParens = (prevLine.match(/\)/g) || []).length;
+                    const openBraces = (prevLine.match(/\{/g) || []).length;
+                    const closeBraces = (prevLine.match(/\}/g) || []).length;
+                    
+                    if (closeParens > openParens || closeBraces > openBraces) {
+                        // Eliminăm excesul
+                        let excessParens = Math.max(0, closeParens - openParens);
+                        let excessBraces = Math.max(0, closeBraces - openBraces);
+                        
+                        for (let i = 0; i < excessParens; i++) {
+                            prevLine = prevLine.replace(/\)\s*$/, '');
+                        }
+                        for (let i = 0; i < excessBraces; i++) {
+                            prevLine = prevLine.replace(/\}\s*$/, '');
+                        }
+                        lines[errorLine - 1] = prevLine;
+                    }
+                }
             }
+            
+            // Verificăm dacă linia curentă are doar paranteze/acolade și export
+            const lineWithExport = lines.slice(errorLine).join('\n');
+            if (/^[\)\}\s]*export default/.test(lineWithExport)) {
+                // Eliminăm parantezele în plus de pe această linie și mutăm exportul pe linie nouă
+                lines[errorLine] = lineContent.replace(/^[\)\}\s]+/, '');
+            } else {
+                lines[errorLine] = fixedLine;
+            }
+
+            return {
+                success: true,
+                type: 'extra-parentheses',
+                description: `Eliminat paranteze/acolade în plus`,
+                content: lines.join('\n')
+            };
         }
 
         return { success: false };
