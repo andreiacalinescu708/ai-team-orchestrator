@@ -272,14 +272,43 @@ class CodeFixerService {
      * Fix pentru sintaxă JSX invalidă
      */
     async fixJSXSyntax(content, errorInfo) {
-        // Verificăm elemente JSX neînchise
-        const selfClosingPattern = /<([A-Z][a-zA-Z0-9]*)[^>]*[^/]>/g;
+        // CAZ 1: Eroare specifică "Unexpected end of file before a closing 'X' tag"
+        const closingTagError = errorInfo.errorType?.match(/closing "([^"]+)" tag/);
+        if (closingTagError) {
+            const tagName = closingTagError[1];
+            // Verificăm dacă tagul chiar nu e închis
+            const openCount = (content.match(new RegExp(`<${tagName}[>\\s]`, 'g')) || []).length;
+            const closeCount = (content.match(new RegExp(`</${tagName}>`, 'g')) || []).length;
+            
+            if (openCount > closeCount) {
+                // Adăugăm tagul de închidere înainte de export
+                const fixed = content.replace(
+                    /(\n)(export default \w+;?)$/m,
+                    `</${tagName}>$1$2`
+                );
+                
+                return {
+                    success: true,
+                    type: 'unclosing-tag-error',
+                    description: `Închis tagul <${tagName}>`,
+                    content: fixed
+                };
+            }
+        }
+
+        // CAZ 2: Verificăm toate elementele JSX neînchise (atât componente React cât și taguri HTML)
+        // Pattern pentru taguri deschise (atât <Div> cât și <div>)
+        const tagPattern = /<([a-zA-Z][a-zA-Z0-9]*)[^>]*[^/]>/g;
         let match;
         const unclosedTags = [];
         
-        while ((match = selfClosingPattern.exec(content)) !== null) {
-            // Verificăm dacă tagul e închis mai jos
+        while ((match = tagPattern.exec(content)) !== null) {
             const tagName = match[1];
+            // Sărim peste tagurile self-closing (br, hr, img, input, etc.)
+            const selfClosingTags = ['br', 'hr', 'img', 'input', 'meta', 'link', 'area', 'base', 'col', 'embed', 'param', 'source', 'track', 'wbr'];
+            if (selfClosingTags.includes(tagName.toLowerCase())) continue;
+            
+            // Verificăm dacă tagul e închis mai jos
             const afterTag = content.substring(match.index + match[0].length);
             if (!afterTag.includes(`</${tagName}>`)) {
                 unclosedTags.push(tagName);
@@ -288,10 +317,10 @@ class CodeFixerService {
 
         if (unclosedTags.length > 0) {
             // Adăugăm tagurile de închidere la finalul componentei (înainte de export)
-            let fixed = content;
-            const closingTags = unclosedTags.map(t => `</${t}>`).join('\n');
+            // Închidem în ordinea inversă (LIFO - last in, first out)
+            const closingTags = unclosedTags.reverse().map(t => `</${t}>`).join('\n');
             
-            fixed = fixed.replace(
+            const fixed = content.replace(
                 /(export default \w+;?)$/m,
                 `${closingTags}\n$1`
             );
