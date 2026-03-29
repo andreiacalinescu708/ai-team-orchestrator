@@ -136,18 +136,24 @@ ReactDOM.createRoot(document.getElementById('root')).render(
                 {
                     role: 'system',
                     content: `Generează o componentă React App.jsx pentru: ${JSON.stringify(discoveryData)}.
-Include:
-- React Router setup cu Routes și Route
-- Navigation bar
-- Layout responsive
-- Import paginilor Home, List, Detail, Create, Edit
-Folosește functional components și hooks.
-Răspunde DOAR cu codul.`
+REGULI STRICTE:
+1. Folosește EXACT această sintaxă pentru importuri: import { BrowserRouter, Routes, Route, Link } from 'react-router-dom'
+2. Importă paginile așa: import Home from './pages/Home.jsx' etc.
+3. Folosește functional component: function App() { ... }
+4. La FINALUL fișierului, pe ultima linie, pune EXACT: export default App
+5. Include React Router cu Routes și Route pentru paginile: Home, List, Detail, Create, Edit
+6. Folosește Link pentru navigation bar
+Răspunde DOAR cu codul valid JSX, fără explicații.`
                 }
             ];
 
             const appResponse = await callKimiThinking(appPrompt);
-            const appCode = appResponse.content.replace(/```jsx|```javascript|```js|```/g, '').trim();
+            let appCode = appResponse.content.replace(/```jsx|```javascript|```js|```/g, '').trim();
+            
+            // Verificăm și adăugăm export default dacă lipsește
+            if (!appCode.includes('export default App') && !appCode.includes('export { App }')) {
+                appCode += '\n\nexport default App;';
+            }
 
             await writeFile(
                 path.join(frontendPath, 'src', 'App.jsx'),
@@ -181,14 +187,25 @@ Răspunde DOAR cu codul CSS.`
                     {
                         role: 'system',
                         content: `Generează o pagină React ${page} pentru aplicația: ${JSON.stringify(discoveryData)}.
-Folosește hooks (useState, useEffect) și axios pentru API calls.
-Pagina trebuie să fie funcțională și să folosească react-router-dom pentru navigation.
-Răspunde DOAR cu codul.`
+REGULI STRICTE:
+1. Folosește: import React, { useState, useEffect } from 'react'
+2. Folosește: import { useParams, useNavigate, Link } from 'react-router-dom'
+3. Componenta se numește ${page}: function ${page}() { ... }
+4. La FINAL pune EXACT: export default ${page}
+5. Folosește axios pentru API calls (import axios from 'axios')
+6. Pentru liste: folosește useEffect pentru fetch date
+7. Pentru formulare: folosește useState pentru form data
+Răspunde DOAR cu codul valid JSX, fără explicații.`
                     }
                 ];
 
                 const pageResponse = await callKimiThinking(pagePrompt);
-                const pageCode = pageResponse.content.replace(/```jsx|```javascript|```js|```/g, '').trim();
+                let pageCode = pageResponse.content.replace(/```jsx|```javascript|```js|```/g, '').trim();
+                
+                // Verificăm și adăugăm export default dacă lipsește
+                if (!pageCode.includes(`export default ${page}`) && !pageCode.includes(`export { ${page} }`)) {
+                    pageCode += `\n\nexport default ${page};`;
+                }
 
                 await writeFile(
                     path.join(frontendPath, 'src', 'pages', `${page}.jsx`),
