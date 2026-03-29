@@ -135,25 +135,26 @@ ReactDOM.createRoot(document.getElementById('root')).render(
             const appPrompt = [
                 {
                     role: 'system',
-                    content: `Generează o componentă React App.jsx pentru: ${JSON.stringify(discoveryData)}.
-REGULI STRICTE:
-1. Folosește EXACT această sintaxă pentru importuri: import { BrowserRouter, Routes, Route, Link } from 'react-router-dom'
-2. Importă paginile așa: import Home from './pages/Home.jsx' etc.
-3. Folosește functional component: function App() { ... }
-4. La FINALUL fișierului, pe ultima linie, pune EXACT: export default App
-5. Include React Router cu Routes și Route pentru paginile: Home, List, Detail, Create, Edit
-6. Folosește Link pentru navigation bar
-Răspunde DOAR cu codul valid JSX, fără explicații.`
+                    content: `Generează componenta React App.jsx pentru: ${JSON.stringify(discoveryData)}.
+REGULI OBLIGATORII:
+1. ÎNCEPUT: import { BrowserRouter, Routes, Route, Link } from 'react-router-dom'
+2. Import pagini: import Home from './pages/Home.jsx' (și List, Detail, Create, Edit)
+3. COMPONENTA: function App() { return (...) }
+4. STRUCTURA return: <BrowserRouter>...</BrowserRouter> cu <nav> și <Routes>
+5. Fiecare Route: <Route path="/" element={<Home />} />
+6. Navigație: <Link to="/">Home</Link> etc.
+7. LA FINAL: export default App
+8. TOATE parantezele ( ) și acoladele { } trebuie BALANCE
+9. FĂRĂ cod incomplet - verifică sintaxa!
+Răspunde DOAR cu cod JSX valid și complet, fără explicații.`
                 }
             ];
 
             const appResponse = await callKimiThinking(appPrompt);
             let appCode = appResponse.content.replace(/```jsx|```javascript|```js|```/g, '').trim();
             
-            // Verificăm și adăugăm export default dacă lipsește
-            if (!appCode.includes('export default App') && !appCode.includes('export { App }')) {
-                appCode += '\n\nexport default App;';
-            }
+            // Validare și fix pentru sintaxă
+            appCode = this.fixSyntaxErrors(appCode, 'App');
 
             await writeFile(
                 path.join(frontendPath, 'src', 'App.jsx'),
@@ -187,25 +188,25 @@ Răspunde DOAR cu codul CSS.`
                     {
                         role: 'system',
                         content: `Generează o pagină React ${page} pentru aplicația: ${JSON.stringify(discoveryData)}.
-REGULI STRICTE:
-1. Folosește: import React, { useState, useEffect } from 'react'
-2. Folosește: import { useParams, useNavigate, Link } from 'react-router-dom'
-3. Componenta se numește ${page}: function ${page}() { ... }
-4. La FINAL pune EXACT: export default ${page}
-5. Folosește axios pentru API calls (import axios from 'axios')
-6. Pentru liste: folosește useEffect pentru fetch date
-7. Pentru formulare: folosește useState pentru form data
-Răspunde DOAR cu codul valid JSX, fără explicații.`
+REGULI OBLIGATORII:
+1. ÎNCEPUT: import React, { useState, useEffect } from 'react'
+2. Import router: import { useParams, useNavigate, Link } from 'react-router-dom'
+3. Import axios: import axios from 'axios'
+4. COMPONENTA: function ${page}() { ... return (...) }
+5. STRUCTURA return: UN singur element parent (div sau fragment <>...</>)
+6. LA FINAL: export default ${page}
+7. FOLOSEȘTE useEffect PENTRU FETCH DATE, nu în timpul render
+8. TOATE parantezele ( ) și acoladele { } trebuie să fie BALANCE corect
+9. FĂRĂ cod incomplet - verifică sintaxa înainte să răspunzi
+Răspunde DOAR cu codul JSX valid și complet, fără explicații.`
                     }
                 ];
 
                 const pageResponse = await callKimiThinking(pagePrompt);
                 let pageCode = pageResponse.content.replace(/```jsx|```javascript|```js|```/g, '').trim();
                 
-                // Verificăm și adăugăm export default dacă lipsește
-                if (!pageCode.includes(`export default ${page}`) && !pageCode.includes(`export { ${page} }`)) {
-                    pageCode += `\n\nexport default ${page};`;
-                }
+                // Validare și fix pentru paranteze balansate
+                pageCode = this.fixSyntaxErrors(pageCode, page);
 
                 await writeFile(
                     path.join(frontendPath, 'src', 'pages', `${page}.jsx`),
@@ -307,6 +308,58 @@ npm run build
             await logger.error('Eroare FrontendWorker', { projectId, error: error.message });
             throw error;
         }
+    }
+
+    /**
+     * Verifică și corectează erorile de sintaxă comune în codul generat
+     */
+    fixSyntaxErrors(code, componentName) {
+        let fixed = code;
+        
+        // 1. Asigurăm că există export default
+        if (!fixed.includes(`export default ${componentName}`) && !fixed.includes(`export { ${componentName} }`)) {
+            fixed += `\n\nexport default ${componentName};`;
+        }
+        
+        // 2. Verificăm parantezele balansate - numărăm ( și )
+        const openParens = (fixed.match(/\(/g) || []).length;
+        const closeParens = (fixed.match(/\)/g) || []).length;
+        if (openParens > closeParens) {
+            // Adăugăm parantezele lipsă înainte de export
+            const missing = openParens - closeParens;
+            fixed = fixed.replace(
+                new RegExp(`(export default ${componentName};?)`),
+                ')'.repeat(missing) + '\n$1'
+            );
+        }
+        
+        // 3. Verificăm acoladele balansate - numărăm { și }
+        const openBraces = (fixed.match(/\{/g) || []).length;
+        const closeBraces = (fixed.match(/\}/g) || []).length;
+        if (openBraces > closeBraces) {
+            const missing = openBraces - closeBraces;
+            // Adăugăm acoladele lipsă înainte de export
+            fixed = fixed.replace(
+                new RegExp(`(export default ${componentName};?)`),
+                '}'.repeat(missing) + '\n$1'
+            );
+        }
+        
+        // 4. Fix pentru array methods (filter, map, etc.) care lipsesc )
+        // Caută pattern-uri comune unde lipsește )
+        const lines = fixed.split('\n');
+        for (let i = 0; i < lines.length; i++) {
+            // Dacă linia se termină cu .includes( sau .filter( sau .map( fără )
+            if (/\.(includes|filter|map|find|some|every)\([^)]*$/.test(lines[i])) {
+                // Verificăm dacă următoarea linie nu e continuare logică
+                if (i + 1 < lines.length && !lines[i + 1].trim().startsWith('.')) {
+                    lines[i] = lines[i] + ')';
+                }
+            }
+        }
+        fixed = lines.join('\n');
+        
+        return fixed;
     }
 
     async sendProgress(projectId, text) {
