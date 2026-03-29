@@ -5,6 +5,15 @@ const { Logger } = require('../utils/logger');
 const logger = new Logger('AgentCommander');
 
 /**
+ * Trunchiază textul pentru a respecta limita Telegram (4096 caractere)
+ * Lasă margine de siguranță de 100 caractere pentru tag-uri HTML
+ */
+function truncateMessage(text, maxLength = 3900) {
+    if (!text || text.length <= maxLength) return text;
+    return text.substring(0, maxLength) + '\n\n... (mesaj trunchiat)';
+}
+
+/**
  * AgentCommander - Orchestrază comenzi autonome
  */
 class AgentCommander {
@@ -131,8 +140,8 @@ class AgentCommander {
             const duration = Date.now() - startTime;
             console.log(`✅ Comandă executată în ${duration}ms:`, result.success);
 
-            // Trimitem rezultatul
-            await this.bot.telegram.sendMessage(chatId, result.message, {
+            // Trimitem rezultatul (trunchiat dacă e prea lung)
+            await this.bot.telegram.sendMessage(chatId, truncateMessage(result.message), {
                 parse_mode: 'HTML',
                 disable_web_page_preview: true
             });
@@ -146,8 +155,9 @@ class AgentCommander {
 
         } catch (error) {
             console.error('❌ Eroare execuție comandă:', error);
+            const errorMsg = truncateMessage(error.message, 3800); // Mai mic pentru a lăsa loc pentru HTML
             await this.bot.telegram.sendMessage(chatId, 
-                `❌ <b>Eroare execuție:</b>\n<code>${error.message}</code>`,
+                `❌ <b>Eroare execuție:</b>\n<pre>${errorMsg}</pre>`,
                 { parse_mode: 'HTML' }
             );
             await logger.error('Eroare execuție comandă', { projectId, error: error.message });
