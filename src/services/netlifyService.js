@@ -331,8 +331,64 @@ class NetlifyService {
             return { success: true };
         } catch (error) {
             console.error('Eroare build:', error);
-            return { success: false, error: error.message };
+            
+            // Extragem informații structurate despre eroare
+            const errorDetails = {
+                success: false,
+                error: error.message,
+                stderr: error.stderr,
+                stdout: error.stdout,
+                // Parsează eroarea pentru a extrage fișierul și linia
+                parsed: this.parseBuildError(error.stderr || error.message)
+            };
+            
+            return errorDetails;
         }
+    }
+
+    /**
+     * Parsează mesajul de eroare pentru a extrage fișierul și linia
+     */
+    parseBuildError(errorMessage) {
+        const result = {
+            filePath: null,
+            line: null,
+            column: null,
+            errorType: null,
+            snippet: null
+        };
+
+        if (!errorMessage) return result;
+
+        // Pattern pentru vite/esbuild: file: /path/to/file:line:column
+        const vitePattern = /file:\s*(.+?):(\d+):(\d+)/;
+        const viteMatch = errorMessage.match(vitePattern);
+        if (viteMatch) {
+            result.filePath = viteMatch[1].trim();
+            result.line = parseInt(viteMatch[2]);
+            result.column = parseInt(viteMatch[3]);
+        }
+
+        // Pattern pentru eroare: ERROR: message
+        const errorPattern = /ERROR:\s*(.+?)(?:\n|$)/i;
+        const errorMatch = errorMessage.match(errorPattern);
+        if (errorMatch) {
+            result.errorType = errorMatch[1].trim();
+        }
+
+        // Extragem snippet-ul de cod
+        const lines = errorMessage.split('\n');
+        const codeLines = [];
+        for (const line of lines) {
+            if (line.match(/^\s*\d+\s*\|/)) {
+                codeLines.push(line);
+            }
+        }
+        if (codeLines.length > 0) {
+            result.snippet = codeLines.join('\n');
+        }
+
+        return result;
     }
 
     async teardown(projectId) {

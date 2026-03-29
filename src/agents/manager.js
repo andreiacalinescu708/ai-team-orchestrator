@@ -5,6 +5,7 @@ const { Logger } = require('../utils/logger');
 const { SkillManagerAgent } = require('./skill-manager');
 const { NetlifyService } = require('../services/netlifyService');
 const { SurgeService } = require('../services/surgeService');
+const { CodeFixerService } = require('../services/codeFixerService');
 
 const logger = new Logger('ManagerAgent');
 
@@ -26,6 +27,7 @@ class ManagerAgent {
         this.bot = bot;
         this.netlifyService = new NetlifyService();
         this.surgeService = new SurgeService();
+        this.codeFixer = new CodeFixerService();
     }
 
     /**
@@ -279,9 +281,16 @@ Ce dorești să faci?`;
         }
     }
 
-    async deployToNetlify(chatId, projectId, userId) {
+    async deployToNetlify(chatId, projectId, userId, retryCount = 0) {
+        const MAX_RETRIES = 2;
+        
         try {
-            await this.bot.telegram.sendMessage(chatId, '🚀 <i>Deploying pe Netlify...</i>', { parse_mode: 'HTML' });
+            await this.bot.telegram.sendMessage(chatId, 
+                retryCount > 0 
+                    ? `🔧 <i>Încerc din nou deploy-ul (încercarea ${retryCount + 1}/${MAX_RETRIES + 1})...</i>`
+                    : '🚀 <i>Deploying pe Netlify...</i>', 
+                { parse_mode: 'HTML' }
+            );
             
             const projectPath = `./projects/project-${projectId}`;
             const result = await this.netlifyService.deploy(projectId, projectPath, userId, `ai-project-${projectId}`);
@@ -303,10 +312,38 @@ Ce dorești să faci?`;
                     }
                 );
             } else {
-                await this.bot.telegram.sendMessage(chatId, 
-                    `⚠️ <b>Deploy nereușit</b>\n\n${result.message}`,
-                    { parse_mode: 'HTML' }
-                );
+                // Încercăm auto-fixarea erorii
+                if (retryCount < MAX_RETRIES && result.parsed && result.parsed.filePath) {
+                    await this.bot.telegram.sendMessage(chatId, 
+                        `⚠️ <b>Deploy nereușit</b>\n` +
+                        `🔍 Am detectat o eroare în: <code>${result.parsed.filePath}:${result.parsed.line}</code>\n` +
+                        `🛠️ Încerc să repar automat...`,
+                        { parse_mode: 'HTML' }
+                    );
+
+                    const fixResult = await this.codeFixer.fixCode(result.parsed, projectPath);
+                    
+                    if (fixResult.success) {
+                        await this.bot.telegram.sendMessage(chatId, 
+                            `✅ <b>Eroare reparată!</b>\n${fixResult.message}`,
+                            { parse_mode: 'HTML' }
+                        );
+                        
+                        // Reîncercăm deploy-ul
+                        return this.deployToNetlify(chatId, projectId, userId, retryCount + 1);
+                    } else {
+                        await this.bot.telegram.sendMessage(chatId, 
+                            `❌ <b>Nu am putut repara automat eroarea</b>\n` +
+                            `Eroare: <pre>${escapeHtml(result.message)}</pre>`,
+                            { parse_mode: 'HTML' }
+                        );
+                    }
+                } else {
+                    await this.bot.telegram.sendMessage(chatId, 
+                        `⚠️ <b>Deploy nereușit</b>\n\n<pre>${escapeHtml(result.message)}</pre>`,
+                        { parse_mode: 'HTML' }
+                    );
+                }
             }
         } catch (error) {
             await logger.error('Eroare deploy Netlify', { projectId, error: error.message });
