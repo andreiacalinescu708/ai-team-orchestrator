@@ -8,6 +8,15 @@ const { SurgeService } = require('../services/surgeService');
 
 const logger = new Logger('ManagerAgent');
 
+// Funcție pentru escape HTML în mesaje Telegram
+function escapeHtml(text) {
+    if (!text) return '';
+    return text
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;');
+}
+
 /**
  * Manager Agent
  * Orchestrază întregul proces de discovery și execuție
@@ -261,7 +270,7 @@ Ce dorești să faci?`;
                 );
             } else {
                 await this.bot.telegram.sendMessage(chatId, 
-                    `⚠️ <b>Deploy nereușit</b>\n\n${result.message}`,
+                    `⚠️ <b>Deploy nereușit</b>\n\n<pre>${escapeHtml(result.message)}</pre>`,
                     { parse_mode: 'HTML' }
                 );
             }
@@ -301,7 +310,10 @@ Ce dorești să faci?`;
             }
         } catch (error) {
             await logger.error('Eroare deploy Netlify', { projectId, error: error.message });
-            await this.bot.telegram.sendMessage(chatId, `❌ Eroare: ${error.message}`);
+            await this.bot.telegram.sendMessage(chatId, 
+                `❌ <b>Eroare deploy</b>\n\n<pre>${escapeHtml(error.message)}</pre>`,
+                { parse_mode: 'HTML' }
+            );
         }
     }
 
