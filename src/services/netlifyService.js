@@ -213,7 +213,7 @@ class NetlifyService {
             let attempts = 0;
             let deployData = data;
 
-            while (!deployReady && attempts < 30) {
+            while (!deployReady && attempts < 60) { // Max 2 minute
                 await new Promise(r => setTimeout(r, 2000));
                 
                 const statusResponse = await fetch(`${this.apiBase}/deploys/${data.id}`, {
@@ -229,10 +229,26 @@ class NetlifyService {
                 attempts++;
             }
 
+            if (!deployReady) {
+                return { success: false, error: 'Timeout așteptând deploy-ul' };
+            }
+
+            // Luăm URL-ul site-ului, nu al deploy-ului
+            const siteResponse = await fetch(`${this.apiBase}/sites/${siteId}`, {
+                headers: { 'Authorization': `Bearer ${this.token}` }
+            });
+            const siteData = await siteResponse.json();
+            
+            // Folosim URL-ul site-ului (nu deploy-specific)
+            const siteUrl = siteData.ssl_url || siteData.url;
+
+            // Așteptăm extra 5 secunde pentru propagare DNS
+            await new Promise(r => setTimeout(r, 5000));
+
             return {
                 success: true,
                 deployId: data.id,
-                url: deployData.ssl_url || deployData.url
+                url: siteUrl
             };
 
         } catch (error) {
