@@ -126,6 +126,16 @@ class CodeFixerService {
                 }
             }
 
+            // Eroare: comentarii CSS neînchise (Expected "*/" to terminate multi-line comment)
+            if (errorInfo.errorType?.includes('Expected "*/"') || 
+                errorInfo.message?.includes('terminate multi-line comment') ||
+                errorInfo.message?.includes('*/')) {
+                fixApplied = await this.fixCSSComments(fileContent, errorInfo);
+                if (fixApplied.success) {
+                    fixedContent = fixApplied.content;
+                }
+            }
+
             // Dacă nu am putut aplica un fix specific, încercăm cu AI
             if (!fixApplied || !fixApplied.success) {
                 fixApplied = await this.fixWithAI(fileContent, errorInfo);
@@ -327,6 +337,59 @@ class CodeFixerService {
                 description: `Eliminat importuri duplicate`,
                 content: fixed
             };
+        }
+
+        return { success: false };
+    }
+
+    /**
+     * Fix pentru comentarii CSS neînchise
+     */
+    async fixCSSComments(content, errorInfo) {
+        // Verificăm dacă avem comentarii /* neînchise
+        const openComments = (content.match(/\/\*/g) || []).length;
+        const closeComments = (content.match(/\*\//g) || []).length;
+
+        if (openComments > closeComments) {
+            // Adăugăm */ la finalul fișierului
+            const missing = openComments - closeComments;
+            const fixed = content + '\n' + ' */'.repeat(missing);
+
+            return {
+                success: true,
+                type: 'unclosed-css-comment',
+                description: `Adăugat ${missing} închideri de comentariu CSS`,
+                content: fixed
+            };
+        }
+
+        // Dacă numărul e corect dar e totuși eroare, poate fi o linie specifică
+        // Căutăm linia cu comentariul problemă și adăugăm */
+        const lines = content.split('\n');
+        for (let i = 0; i < lines.length; i++) {
+            const line = lines[i];
+            // Dacă linia începe cu /* dar nu conține */ pe aceeași linie sau următoarele
+            if (line.includes('/*') && !line.includes('*/')) {
+                // Verificăm următoarele 5 linii să vedem dacă există */
+                let foundClose = false;
+                for (let j = i + 1; j < Math.min(i + 6, lines.length); j++) {
+                    if (lines[j].includes('*/')) {
+                        foundClose = true;
+                        break;
+                    }
+                }
+                if (!foundClose) {
+                    // Adăugăm */ la sfârșitul blocului de comentariu
+                    lines[i] = line + ' */';
+                    return {
+                        success: true,
+                        type: 'unclosed-css-comment-line',
+                        description: `Închis comentariul CSS de la linia ${i + 1}`,
+                        content: lines.join('\n')
+                    };
+                }
+            }
+        }
         }
 
         return { success: false };
