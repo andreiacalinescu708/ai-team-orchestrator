@@ -1,4 +1,4 @@
-const { callKimi } = require('../../utils/kimi');
+const { callKimiThinkingThinking } = require('../../utils/kimi-optimized');
 const { writeFile, createProjectStructure } = require('../../skills/file-operations');
 const { getProjectPath } = require('../../utils/project');
 const { Logger } = require('../../utils/logger');
@@ -52,7 +52,7 @@ Răspunde DOAR cu JSON valid.`
                 }
             ];
 
-            const pkgResponse = await callKimi(packagePrompt);
+            const pkgResponse = await callKimiThinking(packagePrompt);
             const packageJson = pkgResponse.content.replace(/```json|```/g, '').trim();
 
             await writeFile(
@@ -146,7 +146,7 @@ Răspunde DOAR cu codul.`
                 }
             ];
 
-            const appResponse = await callKimi(appPrompt);
+            const appResponse = await callKimiThinking(appPrompt);
             const appCode = appResponse.content.replace(/```jsx|```javascript|```js|```/g, '').trim();
 
             await writeFile(
@@ -164,7 +164,7 @@ Răspunde DOAR cu codul CSS.`
                 }
             ];
 
-            const cssResponse = await callKimi(cssPrompt);
+            const cssResponse = await callKimiThinking(cssPrompt);
             const cssCode = cssResponse.content.replace(/```css|```/g, '').trim();
 
             await writeFile(
@@ -187,7 +187,7 @@ Răspunde DOAR cu codul.`
                     }
                 ];
 
-                const pageResponse = await callKimi(pagePrompt);
+                const pageResponse = await callKimiThinking(pagePrompt);
                 const pageCode = pageResponse.content.replace(/```jsx|```javascript|```js|```/g, '').trim();
 
                 await writeFile(
