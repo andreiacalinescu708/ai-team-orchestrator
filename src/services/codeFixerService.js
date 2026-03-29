@@ -390,7 +390,6 @@ class CodeFixerService {
                 }
             }
         }
-        }
 
         return { success: false };
     }
